@@ -1,0 +1,86 @@
+# =============================================================================
+# 屏幕倾斜检测服务 — 统一配置文件
+# 修改 [detection] 后可 POST /config/reload 热重载；
+# 修改 [gpu] / [server] 等需重启进程。
+# =============================================================================
+
+[app]
+# 服务名称，用于根路径与健康检查展示
+name = "tilt-detection-service"
+# 版本号
+version = "1.0.0"
+# 是否开启 FastAPI debug（生产建议 false）
+debug = false
+# API 路由前缀，例如 /api/v1/health
+api_prefix = "/api/v1"
+
+[server]
+# 监听地址；Docker 内保持 0.0.0.0
+host = "0.0.0.0"
+# 监听端口；与 docker run -p 映射一致
+port = 8880
+# Uvicorn worker 数量；单 GPU 建议 1（每 worker 启动时各预加载一份 YOLO）
+workers = 2
+
+[gpu]
+# YOLO 屏幕检测使用的 GPU；enabled=false 时 screen.pt 走 CPU
+enabled = true
+# 逻辑 GPU 编号。docker run --gpus all 时直接用 0/1/2；
+# docker run --gpus device=1 时容器内只有 cuda:0，此处填 1 也会自动映射到 cuda:0
+device_id = "1"
+# 为 true 时启动预加载阶段校验 CUDA/GPU 可用，不可用则容器启动失败
+require_gpu = true
+
+[screen_detection]
+# YOLO 权重路径（相对项目根目录）
+weights_path = "model/screen.pt"
+# 容器/进程启动时预加载 YOLO；失败则服务不进入 ready 状态
+preload_at_startup = true
+# 默认置信度阈值；请求 body 可覆盖
+conf = 0.25
+# NMS IoU 阈值；请求 body 可覆盖
+iou = 0.45
+# 对外返回的类别 ID：0=blue 1=black 2=white 3=normal
+allowed_class_ids = [0, 1, 2, 3]
+# 单次请求最多图片数
+max_batch_size = 16
+
+[detection]
+# 判定“倾斜”的角度阈值（度）；angle 超过此值时内部 is_tilted=true
+tilt_threshold = 1.5
+# 有效线段最小长度 = 图像宽度 × 该比例
+min_line_length_ratio = 0.1
+# 至少检测到多少条有效参考线段才计算角度
+min_valid_lines = 5
+# 角度样本截断：排序后取 [trim_start_ratio, trim_end_ratio) 区间再求加权平均
+trim_start_ratio = 0.2
+trim_end_ratio = 0.8
+# 高斯模糊核大小（奇数，配置偶数会自动 +1）
+gaussian_kernel_size = 5
+# Canny 边缘检测低/高阈值
+canny_threshold1 = 50
+canny_threshold2 = 150
+# 视为“水平参考线”的角度范围（度）
+horizontal_angle_min = -30
+horizontal_angle_max = 30
+# 视为“垂直参考线”的角度范围（度）
+vertical_angle_min = 60
+vertical_angle_max = 120
+
+[logging]
+# 日志级别：DEBUG / INFO / WARNING / ERROR
+level = "INFO"
+# 日志目录（相对项目根目录）
+log_dir = "logs"
+# 访问日志文件名
+access_log = "access.log"
+# 应用日志文件名
+app_log = "app.log"
+# 单个日志文件最大字节数（此处 10MB）
+max_bytes = 10485760
+# 轮转保留的历史文件个数
+backup_count = 10
+
+[runtime]
+# 单张图片 Base64 解码后允许的最大字节数（此处 10MB）
+max_image_bytes = 10485760

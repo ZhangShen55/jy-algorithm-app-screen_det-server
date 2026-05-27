@@ -1,0 +1,128 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, Dict
+
+import toml
+
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+CONFIG_PATH = BASE_DIR / "config.toml"
+
+
+@dataclass(frozen=True)
+class AppConfig:
+    name: str = "tilt-detection-service"
+    version: str = "1.0.0"
+    debug: bool = False
+    api_prefix: str = "/api/v1"
+
+
+@dataclass(frozen=True)
+class ServerConfig:
+    host: str = "0.0.0.0"
+    port: int = 8880
+    workers: int = 1
+
+
+@dataclass(frozen=True)
+class GpuConfig:
+    enabled: bool = True
+    device_id: str = "0"
+    require_gpu: bool = True
+
+
+@dataclass(frozen=True)
+class DetectionConfig:
+    tilt_threshold: float = 1.5
+    min_line_length_ratio: float = 0.1
+    min_valid_lines: int = 5
+    trim_start_ratio: float = 0.2
+    trim_end_ratio: float = 0.8
+    gaussian_kernel_size: int = 5
+    canny_threshold1: int = 50
+    canny_threshold2: int = 150
+    horizontal_angle_min: float = -30
+    horizontal_angle_max: float = 30
+    vertical_angle_min: float = 60
+    vertical_angle_max: float = 120
+
+
+@dataclass(frozen=True)
+class LoggingConfig:
+    level: str = "INFO"
+    log_dir: str = "logs"
+    access_log: str = "access.log"
+    app_log: str = "app.log"
+    max_bytes: int = 10 * 1024 * 1024
+    backup_count: int = 10
+
+
+@dataclass(frozen=True)
+class RuntimeConfig:
+    max_image_bytes: int = 10 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class ScreenDetectionConfig:
+    weights_path: str = "model/screen.pt"
+    conf: float = 0.25
+    iou: float = 0.45
+    allowed_class_ids: tuple[int, ...] = (0, 1, 2, 3)
+    max_batch_size: int = 16
+    preload_at_startup: bool = True
+
+
+@dataclass(frozen=True)
+class Settings:
+    app: AppConfig
+    server: ServerConfig
+    gpu: GpuConfig
+    detection: DetectionConfig
+    screen_detection: ScreenDetectionConfig
+    logging: LoggingConfig
+    runtime: RuntimeConfig
+
+
+def _section(data: Dict[str, Any], name: str) -> Dict[str, Any]:
+    value = data.get(name, {})
+    return value if isinstance(value, dict) else {}
+
+
+def _normalize_kernel_size(value: int) -> int:
+    if value < 3:
+        return 3
+    return value if value % 2 == 1 else value + 1
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    raw = toml.load(CONFIG_PATH) if CONFIG_PATH.exists() else {}
+    gpu_data = _section(raw, "gpu")
+
+    detection_data = _section(raw, "detection")
+    if "gaussian_kernel_size" in detection_data:
+        detection_data["gaussian_kernel_size"] = _normalize_kernel_size(
+            int(detection_data["gaussian_kernel_size"])
+        )
+
+    screen_data = _section(raw, "screen_detection")
+    if "allowed_class_ids" in screen_data:
+        screen_data["allowed_class_ids"] = tuple(int(x) for x in screen_data["allowed_class_ids"])
+
+    return Settings(
+        app=AppConfig(**_section(raw, "app")),
+        server=ServerConfig(**_section(raw, "server")),
+        gpu=GpuConfig(**gpu_data),
+        detection=DetectionConfig(**detection_data),
+        screen_detection=ScreenDetectionConfig(**screen_data),
+        logging=LoggingConfig(**_section(raw, "logging")),
+        runtime=RuntimeConfig(**_section(raw, "runtime")),
+    )
+
+
+def reload_settings() -> Settings:
+    get_settings.cache_clear()
+    return get_settings()

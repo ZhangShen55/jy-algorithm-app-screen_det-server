@@ -1,0 +1,10 @@
+0blue-screen
+1black-screen
+2white-screen
+3normal-screen
+4askew-screen
+5hand-audio
+6tech-phone
+7tech-smoking
+8tech-sitting
+9tech-book
