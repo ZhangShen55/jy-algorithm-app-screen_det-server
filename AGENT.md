@@ -20,6 +20,7 @@
 |------|------|------|
 | `POST /detect_tilt` | OpenCV 线段角度 | CPU |
 | `POST /detect_screen` | Ultralytics YOLO | GPU（`[gpu].device_id`） |
+| `POST /detect_inspect` | 倾斜 + 屏幕组合（单图 `image`） | CPU + GPU |
 
 路由双挂载：`/health` 与 `/api/v1/health` 等价（见 `app/main.py`）。
 

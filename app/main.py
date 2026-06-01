@@ -111,4 +111,5 @@ async def root() -> dict:
         "health": f"{settings.app.api_prefix}/health",
         "detect_tilt": f"{settings.app.api_prefix}/detect_tilt",
         "detect_screen": f"{settings.app.api_prefix}/detect_screen",
+        "detect_inspect": f"{settings.app.api_prefix}/detect_inspect",
     }

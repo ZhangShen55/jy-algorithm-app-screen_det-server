@@ -27,7 +27,7 @@
 
 | Header | 说明 |
 |--------|------|
-| `Content-Type` | `detect_tilt`：支持 `application/json` 或 `text/plain`；`detect_screen`：**必须** `application/json` |
+| `Content-Type` | `detect_tilt`：支持 `application/json` 或 `text/plain`；`detect_screen` / `detect_inspect`：**必须** `application/json` |
 | `X-Request-ID` | 可选；未传时服务端自动生成，并在响应头回传 |
 
 ### 时间字段
@@ -58,9 +58,10 @@
 | 1 | 服务信息 | GET | `/` 、`/api/v1/` | 返回服务名、版本、各接口路径 |
 | 2 | 健康检查 | GET | `/health` 、`/api/v1/health` | 运行状态、GPU、YOLO 预加载状态 |
 | 3 | 倾斜检测 | POST | `/detect_tilt` 、`/api/v1/detect_tilt` | OpenCV CPU 线段角度检测 |
-| 4 | 屏幕检测 | POST | `/detect_screen` 、`/api/v1/detect_screen` | YOLO GPU 屏幕类型检测 |
-| 5 | 配置查询 | GET | `/config` 、`/api/v1/config` | 返回当前配置快照 |
-| 6 | 配置重载 | POST | `/config/reload` 、`/api/v1/config/reload` | 热重载部分配置（见说明） |
+| 4 | 屏幕检测 | POST | `/detect_screen` 、`/api/v1/detect_screen` | YOLO GPU 屏幕类型检测（支持多图） |
+| 5 | **组合检测** | POST | `/detect_inspect` 、`/api/v1/detect_inspect` | 单图：倾斜 + 屏幕（推荐业务入口） |
+| 6 | 配置查询 | GET | `/config` 、`/api/v1/config` | 返回当前配置快照 |
+| 7 | 配置重载 | POST | `/config/reload` 、`/api/v1/config/reload` | 热重载部分配置（见说明） |
 
 ---
 
@@ -310,7 +311,97 @@
 
 ---
 
-## 5. 配置查询
+## 5. 组合检测（倾斜 + 屏幕）
+
+**URL：** `POST /detect_inspect` 或 `POST /api/v1/detect_inspect`
+
+**功能：** 单张图一次完成倾斜检测（CPU）与幕布/屏幕类型检测（GPU）；Base64 只解码一次。
+
+**Content-Type：** `application/json`（必须）
+
+### 请求参数
+
+| 参数 | 必填 | 类型 | 说明 |
+|------|------|------|------|
+| image | R | string | 单张图片 Base64 |
+| tilt_threshold | O | float | 倾斜阈值（度） |
+| conf | O | float | YOLO 置信度 |
+| iou | O | float | YOLO NMS IoU |
+
+```json
+{
+  "image": "<base64>",
+  "tilt_threshold": 1.5,
+  "conf": 0.25,
+  "iou": 0.45
+}
+```
+
+### 响应约定
+
+- **顶层 `code` 固定为 200**（HTTP 200）；子能力成败看 `tilt.code`、`screen.code`
+- `tilt` / `screen` 各自含 `cost_ms`
+
+### 响应示例（全部成功）
+
+```json
+{
+  "code": 200,
+  "start_time": "1753791280207",
+  "end_time": "1753791280290",
+  "msg": "检测完成",
+  "tilt_threshold": 1.5,
+  "conf": 0.25,
+  "iou": 0.45,
+  "tilt": {
+    "code": 200,
+    "msg": "检测完成",
+    "cost_ms": 38.2,
+    "result": {
+      "is_tilted": true,
+      "angle": 2.35,
+      "cost_ms": 38.2
+    }
+  },
+  "screen": {
+    "code": 200,
+    "msg": "检测完成",
+    "cost_ms": 52.6,
+    "primary": {
+      "label": 3,
+      "confidence": 0.926,
+      "box": [936.0, 55.0, 1697.0, 493.0]
+    },
+    "detections": [...]
+  }
+}
+```
+
+### 无有效幕布/屏幕类型（与 `/detect_screen` 一致）
+
+画面中 **未检出 label 0–3**（无幕布、仅其他类别被过滤、或置信度不足）时：
+
+- `screen.code` 仍为 **200**
+- `screen.primary` 为 **null**，`screen.detections` 为 **[]**
+- `screen.msg` 为 **`检测完成，未识别到有效屏幕类型`**
+- 顶层 `msg` 同步为该文案
+
+> 这不等于倾斜失败，仅表示 YOLO 未给出蓝/黑/白/正常屏四类结果。
+
+### 部分失败示例（顶层仍 code=200）
+
+```json
+{
+  "code": 200,
+  "msg": "倾斜检测完成，屏幕检测失败",
+  "tilt": { "code": 200, "result": { "is_tilted": false, "angle": 0.52, "cost_ms": 40 } },
+  "screen": { "code": 500, "msg": "Detection failed: ...", "primary": null, "detections": [] }
+}
+```
+
+---
+
+## 6. 配置查询
 
 **URL：** `GET /config` 或 `GET /api/v1/config`
 
@@ -320,7 +411,7 @@
 
 ---
 
-## 6. 配置重载
+## 7. 配置重载
 
 **URL：** `POST /config/reload` 或 `POST /api/v1/config/reload`
 
