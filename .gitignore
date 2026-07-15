@@ -35,6 +35,8 @@ logs/
 runs/
 benchmark_reports/
 test/reports/
+test/图像检测/
+test/正常图像/
 
 # Offline wheels (optional, build fallback only)
 wheels/

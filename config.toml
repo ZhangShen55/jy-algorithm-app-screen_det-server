@@ -20,11 +20,11 @@ host = "0.0.0.0"
 # 监听端口；与 docker run -p 映射一致
 port = 8880
 # Uvicorn worker 数量；单 GPU 建议 1（每 worker 启动时各预加载一份 YOLO）
-workers = 2
+workers = 1
 
 [gpu]
 # YOLO 屏幕检测使用的 GPU；enabled=false 时 screen.pt 走 CPU
-enabled = true
+enabled = false
 # 逻辑 GPU 编号。docker run --gpus all 时直接用 0/1/2；
 # docker run --gpus device=1 时容器内只有 cuda:0，此处填 1 也会自动映射到 cuda:0
 device_id = "1"
@@ -84,3 +84,53 @@ backup_count = 10
 [runtime]
 # 单张图片 Base64 解码后允许的最大字节数（此处 10MB）
 max_image_bytes = 10485760
+
+[quality_abnormal_detection]
+# 画面异常检测总开关；包含虚焦、偏色、雪花噪点、花屏
+enabled = true
+# OpenCV 分析前最长边缩放到该尺寸，降低 CPU 开销
+analyze_max_side = 960
+# 屏蔽顶部时间戳等 overlay 的比例
+overlay_top_ratio = 0.08
+# 屏蔽底部水印等 overlay 的比例
+overlay_bottom_ratio = 0.05
+# 偏色 Lab 色偏阈值
+color_cast_lab_threshold = 18.0
+# 偏色 RGB 通道不平衡阈值
+color_cast_imbalance_threshold = 0.25
+# 雪花噪点高频噪声阈值
+snow_noise_threshold = 14.0
+# 雪花噪点边缘密度阈值
+snow_edge_density_threshold = 0.18
+# 虚焦 Laplacian 方差阈值
+blur_laplacian_threshold = 450.0
+# 虚焦边缘密度阈值
+blur_edge_density_threshold = 0.06
+# 花屏分带 Laplacian 阈值
+glitch_band_laplacian_threshold = 450.0
+# 花屏分带饱和度阈值
+glitch_band_saturation_threshold = 28.0
+# 花屏异常区域最小占比
+glitch_min_area_ratio = 0.18
+# 花屏分块行数
+glitch_grid_rows = 16
+# 花屏分块列数
+glitch_grid_cols = 24
+
+[occlusion_detection]
+# 镜头近处遮挡检测总开关
+enabled = true
+# YOLO-seg 推理设备：cpu、mps、0、1 等 Ultralytics 支持的设备标识
+yolo_device = "cpu"
+# 分析前最长边缩放到该尺寸
+analyze_max_side = 960
+# YOLO 置信度阈值；请求 threshold 未传时使用该默认值
+threshold = 0.25
+# 遮挡面积占比判定阈值；请求 area_ratio 未传时使用该默认值
+area_ratio = 0.2
+# YOLO-seg 遮挡模型权重路径
+yolo_seg_weights_path = "model/occlusion.pt"
+# YOLO-seg 推理尺寸
+yolo_imgsz = 960
+# 使用原图尺寸 mask，面积占比更稳定
+yolo_retina_masks = true

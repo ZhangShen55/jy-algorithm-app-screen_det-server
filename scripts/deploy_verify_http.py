@@ -85,6 +85,72 @@ def check_screen_folder(base_url: str, folder: Path, report: Path) -> tuple[int,
     return ok, fail
 
 
+def check_quality_abnormal_routes(base_url: str, root: Path, report: Path) -> tuple[int, int]:
+    sample = root / "test/图像检测/画面异常/偏色/偏色1.png"
+    if not sample.exists():
+        report.write_text(
+            json.dumps({"error": f"missing sample {sample}"}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return 0, 1
+
+    rows = []
+    ok = fail = 0
+    b64 = base64.b64encode(sample.read_bytes()).decode()
+    for path in ("/detect_quality_abnormal", "/api/v1/detect_quality_abnormal"):
+        try:
+            status, data = post_json(base_url, path, {"image": b64})
+            good = (
+                status == 200
+                and data.get("code") == 200
+                and data.get("is_abnormal") is True
+                and 2 in data.get("abnormal_types", [])
+                and all(item.get("type") in data.get("abnormal_types", []) for item in data.get("results", []))
+            )
+            rows.append({"path": path, "ok": good, "response": data})
+            ok += good
+            fail += not good
+        except Exception as exc:
+            rows.append({"path": path, "ok": False, "error": str(exc)})
+            fail += 1
+    report.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+    return ok, fail
+
+
+def check_occlusion_routes(base_url: str, root: Path, report: Path) -> tuple[int, int]:
+    sample = root / "test/图像检测/遮挡/横幅遮挡.png"
+    if not sample.exists():
+        report.write_text(
+            json.dumps({"error": f"missing sample {sample}"}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return 0, 1
+
+    rows = []
+    ok = fail = 0
+    b64 = base64.b64encode(sample.read_bytes()).decode()
+    for path in ("/detect_occlusion", "/api/v1/detect_occlusion"):
+        try:
+            status, data = post_json(base_url, path, {"image": b64})
+            good = (
+                status == 200
+                and data.get("code") == 200
+                and data.get("is_occluded") is True
+                and data.get("occlusion_area_ratio", 0) > 0
+                and 0 <= data.get("score", -1) <= 1
+                and 0 <= data.get("threshold", -1) <= 1
+                and 0 <= data.get("area_ratio", -1) <= 1
+            )
+            rows.append({"path": path, "ok": good, "response": data})
+            ok += good
+            fail += not good
+        except Exception as exc:
+            rows.append({"path": path, "ok": False, "error": str(exc)})
+            fail += 1
+    report.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+    return ok, fail
+
+
 def emit(status: str, name: str, detail: str) -> None:
     print(f"{status}\t{name}\t{detail}")
 
@@ -111,6 +177,12 @@ def main() -> int:
 
     ok, fail = check_screen_folder(base_url, root / "test/error_img", report / "screen_error.json")
     suites.append(("suite:screen_error_img", ok, fail, f"{ok+fail} images"))
+
+    ok, fail = check_quality_abnormal_routes(base_url, root, report / "quality_abnormal_routes.json")
+    suites.append(("suite:quality_abnormal_routes", ok, fail, "2 routes"))
+
+    ok, fail = check_occlusion_routes(base_url, root, report / "occlusion_routes.json")
+    suites.append(("suite:occlusion_routes", ok, fail, "2 routes"))
 
     text0 = root / "test/tilt_img/text0.jpg"
     extra_ok = 0

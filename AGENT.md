@@ -1,4 +1,4 @@
-# AGENT.md — 屏幕倾斜 + 屏幕类型检测服务
+# AGENT.md — 屏幕检测与画面质量检测服务
 
 供 Cursor / AI Agent 快速理解本仓库的上下文、约束与常见操作。
 
@@ -14,13 +14,15 @@
 | 配置 | 根目录 `config.toml`（Docker 运行时挂载） |
 | 模型 | `model/screen.pt`（YOLO，10 类训练，API 仅返回 0–3） |
 
-**两个核心接口：**
+**核心接口：**
 
 | 接口 | 实现 | 设备 |
 |------|------|------|
 | `POST /detect_tilt` | OpenCV 线段角度 | CPU |
 | `POST /detect_screen` | Ultralytics YOLO | GPU（`[gpu].device_id`） |
 | `POST /detect_inspect` | 倾斜 + 屏幕组合（单图 `image`） | CPU + GPU |
+| `POST /detect_quality_abnormal` | OpenCV 规则：虚焦/偏色/雪花噪点/花屏 | CPU |
+| `POST /detect_occlusion` | OpenCV 规则：镜头近处遮挡 + 面积占比 | CPU |
 
 路由双挂载：`/health` 与 `/api/v1/health` 等价（见 `app/main.py`）。
 
@@ -31,10 +33,13 @@
 ```
 app/
   main.py                 # 入口、startup YOLO 预加载、中间件
-  api/v1/                 # tilt / screen / health / config
+  api/v1/                 # tilt / screen / quality_abnormal / occlusion / health / config
   services/
     tilt_detector.py      # 倾斜算法
     screen_detector.py    # YOLO 加载、warmup、推理
+    quality_abnormal_detector.py # 画面异常 OpenCV 规则
+    occlusion_detector.py # 镜头遮挡 OpenCV 规则
+    image_preprocess.py   # 新增检测共享预处理
     yolo_compat.py        # 旧权重 AAttn 兼容
   core/config.py          # config.toml 读取（lru_cache）
 config.toml               # 运行时配置（Docker 挂载）
@@ -47,6 +52,8 @@ scripts/                  # 验收、单图检测等（不进生产镜像）
 test/                     # 测试图与验收报告
   tilt_img/               # detect_tilt
   ok_img/ error_img/      # detect_screen
+  图像检测/画面异常/       # detect_quality_abnormal 样例
+  图像检测/遮挡/           # detect_occlusion 样例
 ```
 
 **已移除、勿再引用：** `nginx/`、`docker-compose.yml`、默认离线 `wheels/` 构建。
@@ -105,6 +112,8 @@ uvicorn app.main:app --host 0.0.0.0 --port 8880 --workers 1
 
 ```bash
 bash scripts/run_deploy_verify.sh
+python scripts/validate_quality_abnormal_samples.py
+python scripts/validate_occlusion_samples.py
 ```
 
 ---
@@ -115,7 +124,13 @@ bash scripts/run_deploy_verify.sh
 |--------|----------------------|--------|
 | `[detection]` | ✅ | |
 | `[screen_detection]` 部分字段 | ✅ | |
+| `[quality_abnormal_detection]` | ✅ | |
+| `[occlusion_detection]` | ✅ | |
 | `[gpu]`、`[server]`、`workers` | | ✅ |
+
+画面异常枚举固定：`1=虚焦`、`2=偏色`、`3=雪花噪点`、`4=花屏`。`abnormal_types` 中出现的类型才应出现在 `results` 中。
+
+遮挡第一版不输出遮挡物类型枚举，仅输出 `is_occluded`、`occlusion_area_ratio`、`score` 和 `message`。当前遮挡定义是镜头前或镜头不远处遮挡，不包括教室内部普通物体。
 
 ---
 
@@ -178,6 +193,18 @@ nvidia-smi
 | `test/tilt_img/` | `/detect_tilt` |
 | `test/ok_img/` | `/detect_screen` 正常样例 |
 | `test/error_img/` | `/detect_screen` 异常样例 |
+| `test/图像检测/画面异常/` | `/detect_quality_abnormal` |
+| `test/图像检测/遮挡/` | `/detect_occlusion` |
+
+## 后续 YOLO-seg 遮挡后端说明
+
+如果 OpenCV 遮挡规则准确率不足，可新增单类 YOLO segmentation 后端：
+
+- 类别建议固定为 `occlusion`。
+- 标注需要分割 mask，不是检测框；可用 COCO/Labelme/CVAT 导出后转换为 YOLO-seg。
+- 可行性实验：80–150 张遮挡正样本 + 200–500 张正常负样本。
+- 第一版可用：300–500 张遮挡正样本 + 500–1000 张正常负样本。
+- 生产稳定：1000+ 张遮挡正样本 + 2000+ 张正常负样本。
 
 ---
 

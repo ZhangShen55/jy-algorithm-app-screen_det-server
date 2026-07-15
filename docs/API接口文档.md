@@ -27,7 +27,7 @@
 
 | Header | 说明 |
 |--------|------|
-| `Content-Type` | `detect_tilt`：支持 `application/json` 或 `text/plain`；`detect_screen` / `detect_inspect`：**必须** `application/json` |
+| `Content-Type` | `detect_tilt`：支持 `application/json` 或 `text/plain`；其余 POST 检测接口必须 `application/json` |
 | `X-Request-ID` | 可选；未传时服务端自动生成，并在响应头回传 |
 
 ### 时间字段
@@ -60,8 +60,10 @@
 | 3 | 倾斜检测 | POST | `/detect_tilt` 、`/api/v1/detect_tilt` | OpenCV CPU 线段角度检测 |
 | 4 | 屏幕检测 | POST | `/detect_screen` 、`/api/v1/detect_screen` | YOLO GPU 屏幕类型检测（支持多图） |
 | 5 | **组合检测** | POST | `/detect_inspect` 、`/api/v1/detect_inspect` | 单图：倾斜 + 屏幕（推荐业务入口） |
-| 6 | 配置查询 | GET | `/config` 、`/api/v1/config` | 返回当前配置快照 |
-| 7 | 配置重载 | POST | `/config/reload` 、`/api/v1/config/reload` | 热重载部分配置（见说明） |
+| 6 | 画面异常检测 | POST | `/detect_quality_abnormal` 、`/api/v1/detect_quality_abnormal` | OpenCV CPU：虚焦、偏色、雪花噪点、花屏 |
+| 7 | 镜头遮挡检测 | POST | `/detect_occlusion` 、`/api/v1/detect_occlusion` | YOLO-seg：镜头近处遮挡与 mask 面积占比 |
+| 8 | 配置查询 | GET | `/config` 、`/api/v1/config` | 返回当前配置快照 |
+| 9 | 配置重载 | POST | `/config/reload` 、`/api/v1/config/reload` | 热重载部分配置（见说明） |
 
 ---
 
@@ -79,7 +81,10 @@
   "version": "1.0.0",
   "health": "/api/v1/health",
   "detect_tilt": "/api/v1/detect_tilt",
-  "detect_screen": "/api/v1/detect_screen"
+  "detect_screen": "/api/v1/detect_screen",
+  "detect_inspect": "/api/v1/detect_inspect",
+  "detect_quality_abnormal": "/api/v1/detect_quality_abnormal",
+  "detect_occlusion": "/api/v1/detect_occlusion"
 }
 ```
 
@@ -401,17 +406,170 @@
 
 ---
 
-## 6. 配置查询
+## 6. 画面异常检测
+
+**URL：** `POST /detect_quality_abnormal` 或 `POST /api/v1/detect_quality_abnormal`
+
+**功能：** 使用 OpenCV 规则检测单张图片是否存在画面异常。异常类型支持多选，固定枚举为 `1=虚焦`、`2=偏色`、`3=雪花噪点`、`4=花屏`。
+
+**Content-Type：** `application/json`
+
+### 请求参数
+
+| 参数 | 必填 | 类型 | 说明 |
+|------|------|------|------|
+| image | R | string | 单张图片 Base64，支持 data URL 前缀 |
+
+**请求示例：**
+
+```json
+{
+  "image": "<base64>"
+}
+```
+
+### 响应字段
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| code | int | 200 表示成功 |
+| msg | string | 接口执行描述 |
+| is_abnormal | boolean | 是否检测到任一画面异常 |
+| abnormal_types | int[] | 命中的异常类型数组 |
+| results | object[] | 仅包含命中类型的异常明细 |
+| results[].type | int | 1=虚焦，2=偏色，3=雪花噪点，4=花屏 |
+| results[].score | float | 异常分数，范围 0–1 |
+| results[].message | string | 中文提示 |
+| message | string | 总体中文提示 |
+
+**成功示例：**
+
+```json
+{
+  "code": 200,
+  "msg": "检测完成",
+  "is_abnormal": true,
+  "abnormal_types": [1, 4],
+  "results": [
+    { "type": 1, "score": 0.76, "message": "疑似虚焦" },
+    { "type": 4, "score": 0.71, "message": "疑似花屏" }
+  ],
+  "message": "检测到画面异常：虚焦、花屏"
+}
+```
+
+**无异常示例：**
+
+```json
+{
+  "code": 200,
+  "msg": "检测完成",
+  "is_abnormal": false,
+  "abnormal_types": [],
+  "results": [],
+  "message": "未检测到画面异常"
+}
+```
+
+**算法说明：**
+
+- 检测顺序固定为：偏色 → 雪花噪点 → 虚焦 → 花屏。
+- 花屏第一版为单图 OpenCV 规则，使用固定网格异常块、形态学连接和面积占比判断；明显花屏样例目标约 70% 准确率。
+- `abnormal_types` 中出现的类型必须在 `results[].type` 中有对应明细；未命中类型不返回明细。
+
+---
+
+## 7. 镜头遮挡检测
+
+**URL：** `POST /detect_occlusion` 或 `POST /api/v1/detect_occlusion`
+
+**功能：** 检测镜头前或镜头不远处遮挡，并返回遮挡区域占整图面积比例。默认使用单类 YOLO-seg 模型 `model/occlusion.pt`，第一版不输出遮挡物枚举。
+
+**Content-Type：** `application/json`
+
+### 请求参数
+
+| 参数 | 必填 | 类型 | 说明 |
+|------|------|------|------|
+| image | R | string | 单张图片 Base64，支持 data URL 前缀 |
+| threshold | O | float | YOLO 置信度阈值，范围 0–1；不传则使用 `config.toml` 默认值 |
+| area_ratio | O | float | 遮挡面积占比判定阈值，范围 0–1；不传则使用 `config.toml` 默认值 |
+
+**请求示例：**
+
+```json
+{
+  "image": "<base64>",
+  "threshold": 0.25,
+  "area_ratio": 0.2
+}
+```
+
+### 响应字段
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| code | int | 200 表示成功 |
+| msg | string | 接口执行描述 |
+| is_occluded | boolean | 是否检测到镜头近处遮挡 |
+| occlusion_area_ratio | float | 遮挡面积占比，范围 0–1 |
+| score | float | 检测分数，范围 0–1 |
+| threshold | float | 本次实际使用的 YOLO 置信度阈值 |
+| area_ratio | float | 本次实际使用的遮挡面积判定阈值 |
+| message | string | 中文提示 |
+
+**成功示例：**
+
+```json
+{
+  "code": 200,
+  "msg": "检测完成",
+  "is_occluded": true,
+  "occlusion_area_ratio": 0.2367,
+  "score": 0.87,
+  "threshold": 0.25,
+  "area_ratio": 0.2,
+  "message": "检测到镜头遮挡"
+}
+```
+
+**无遮挡示例：**
+
+```json
+{
+  "code": 200,
+  "msg": "检测完成",
+  "is_occluded": false,
+  "occlusion_area_ratio": 0.0,
+  "score": 0.0,
+  "threshold": 0.25,
+  "area_ratio": 0.2,
+  "message": "未检测到镜头遮挡"
+}
+```
+
+**算法说明：**
+
+- YOLO-seg 后端使用 `model/occlusion.pt` 输出单类 `occlusion` 分割 mask。
+- `threshold` 用于过滤低置信度 YOLO mask；`area_ratio` 用于最终遮挡判定。
+- 多个有效 mask 会先合并并集，再计算 `occlusion_area_ratio = mask并集面积 / 整图面积`。
+- 默认阈值来自 `config.toml`：`threshold=0.25`、`area_ratio=0.2`；请求入参传值时只覆盖本次检测。
+- 在 1000 张已确认正常无遮挡图上，`threshold=0.25` 且 `area_ratio > 0.2` 的误报数为 0。
+- 遮挡定义限定为镜头前或镜头不远处遮挡；教室内部普通人物、桌椅、黑板、投影屏或教学设备不属于遮挡。
+
+---
+
+## 8. 配置查询
 
 **URL：** `GET /config` 或 `GET /api/v1/config`
 
 **请求：** 无
 
-**响应：** 返回 `app`、`server`、`gpu`、`detection`、`screen_detection`、`runtime` 配置对象（`config.toml` 快照）。
+**响应：** 返回 `app`、`server`、`gpu`、`detection`、`screen_detection`、`quality_abnormal_detection`、`occlusion_detection`、`runtime` 配置对象（`config.toml` 快照）。
 
 ---
 
-## 7. 配置重载
+## 9. 配置重载
 
 **URL：** `POST /config/reload` 或 `POST /api/v1/config/reload`
 
@@ -431,6 +589,20 @@
     "allowed_class_ids": [0, 1, 2, 3],
     "max_batch_size": 16,
     "preload_at_startup": true
+  },
+  "quality_abnormal_detection": {
+    "enabled": true,
+    "analyze_max_side": 960
+  },
+  "occlusion_detection": {
+    "enabled": true,
+    "analyze_max_side": 960,
+    "threshold": 0.25,
+    "area_ratio": 0.2,
+    "yolo_seg_weights_path": "model/occlusion.pt",
+    "yolo_imgsz": 960,
+    "yolo_device": "cpu",
+    "yolo_retina_masks": true
   }
 }
 ```
@@ -441,6 +613,8 @@
 |--------|----------------|
 | `[detection]` | ✅ |
 | `[screen_detection]` 部分字段 | ✅ |
+| `[quality_abnormal_detection]` | ✅ |
+| `[occlusion_detection]` | ✅ |
 | `[gpu]`、`[server]`（含 workers、port） | ❌ 需重启 |
 
 ---
@@ -450,8 +624,8 @@
 | 错误码 | HTTP | 说明 | 适用接口 |
 |--------|------|------|----------|
 | 200 | 200 | 成功 | 全部业务接口 |
-| 400 | 400 | 参数错误：缺字段、Base64 无效、图片过大、Content-Type 错误等 | detect_tilt、detect_screen |
-| 500 | 500 | 服务内部错误 | detect_tilt、detect_screen |
+| 400 | 400 | 参数错误：缺字段、Base64 无效、图片过大、Content-Type 错误等 | 全部 POST 检测接口 |
+| 500 | 500 | 服务内部错误 | 全部 POST 检测接口 |
 | 503 | 503 | 服务未就绪（YOLO 未 preload/warmup） | health |
 
 ---
@@ -467,6 +641,15 @@
 | 2 | white-screen（白屏） |
 | 3 | normal-screen（正常屏） |
 
+### 画面异常 type
+
+| type | 含义 |
+|------|------|
+| 1 | 虚焦 |
+| 2 | 偏色 |
+| 3 | 雪花噪点 |
+| 4 | 花屏 |
+
 ### 常用配置项（config.toml）
 
 | 配置项 | 默认值 | 说明 |
@@ -481,7 +664,24 @@
 | screen_detection.iou | 0.45 | 默认 IoU |
 | screen_detection.max_batch_size | 16 | 单次最大图片数 |
 | detection.tilt_threshold | 1.5 | 倾斜判定阈值（度） |
+| quality_abnormal_detection.analyze_max_side | 960 | 画面异常 OpenCV 分析最长边 |
+| quality_abnormal_detection.glitch_min_area_ratio | 0.18 | 花屏异常区域最小占比 |
+| occlusion_detection.threshold | 0.25 | YOLO 置信度阈值，请求 `threshold` 未传时使用 |
+| occlusion_detection.area_ratio | 0.2 | 遮挡面积判定阈值，请求 `area_ratio` 未传时使用 |
+| occlusion_detection.yolo_seg_weights_path | model/occlusion.pt | YOLO-seg 遮挡模型权重 |
+| occlusion_detection.yolo_imgsz | 960 | YOLO-seg 推理尺寸 |
+| occlusion_detection.yolo_device | cpu | YOLO-seg 推理设备 |
 | runtime.max_image_bytes | 10485760 | 单图最大 10MB |
+
+### YOLO-seg 遮挡后端数据建议
+
+遮挡检测默认使用 YOLO segmentation。后续扩充数据时建议：
+
+- 单类标注：`occlusion`。
+- 标注格式：YOLO segmentation 多边形格式；也可由 COCO/Labelme/CVAT 转换。
+- 可行性实验：80–150 张遮挡正样本 + 200–500 张正常负样本。
+- 第一版可用：300–500 张遮挡正样本 + 500–1000 张正常负样本。
+- 生产稳定：1000+ 张遮挡正样本 + 2000+ 张正常负样本。
 
 ### Docker device_id 说明
 
@@ -549,6 +749,36 @@
 
 ---
 
+### 6.1 画面异常检测 — 明细行
+
+| 版本说明 | 功能类型 | URL地址 说明 | 请求动作 | 参数说明【请求】 | R/O | 类型 | 类型说明 | 参数说明【应答】 | R/O | 类型 | 类型说明 | 错误码 | 错误码说明 | 样例说明 |
+|---------|---------|-------------|---------|----------------|-----|------|---------|----------------|-----|------|---------|------|---------|---------|
+| v1.0.0 | 画面异常检测 | POST /detect_quality_abnormal 或 /api/v1/detect_quality_abnormal | POST | Content-Type | R | string | application/json | code | R | int | 200 | 400 | 参数/Base64/图片错误 | 见 §6 |
+| v1.0.0 | 画面异常检测 | 同上 | POST | image | R | string | 单张图片 Base64 | msg | R | string | 结果描述 | 500 | 内部错误 | |
+| v1.0.0 | 画面异常检测 | 同上 | POST | | | | | is_abnormal | R | boolean | 是否存在异常 | | | |
+| v1.0.0 | 画面异常检测 | 同上 | POST | | | | | abnormal_types | R | int[] | 命中枚举：1虚焦 2偏色 3雪花噪点 4花屏 | | | |
+| v1.0.0 | 画面异常检测 | 同上 | POST | | | | | results[].type | R | int | 命中异常类型 | | | |
+| v1.0.0 | 画面异常检测 | 同上 | POST | | | | | results[].score | R | float | 0~1 | | | |
+| v1.0.0 | 画面异常检测 | 同上 | POST | | | | | results[].message | R | string | 中文提示 | | | |
+| v1.0.0 | 画面异常检测 | 同上 | POST | | | | | message | R | string | 总体中文提示 | | | |
+
+---
+
+### 7.1 镜头遮挡检测 — 明细行
+
+| 版本说明 | 功能类型 | URL地址 说明 | 请求动作 | 参数说明【请求】 | R/O | 类型 | 类型说明 | 参数说明【应答】 | R/O | 类型 | 类型说明 | 错误码 | 错误码说明 | 样例说明 |
+|---------|---------|-------------|---------|----------------|-----|------|---------|----------------|-----|------|---------|------|---------|---------|
+| v1.0.0 | 镜头遮挡检测 | POST /detect_occlusion 或 /api/v1/detect_occlusion | POST | Content-Type | R | string | application/json | code | R | int | 200 | 400 | 参数/Base64/图片错误 | 见 §7 |
+| v1.0.0 | 镜头遮挡检测 | 同上 | POST | image | R | string | 单张图片 Base64 | msg | R | string | 结果描述 | 500 | 内部错误 | |
+| v1.0.0 | 镜头遮挡检测 | 同上 | POST | threshold | O | float | YOLO 置信度阈值 0~1；不传读配置 | threshold | R | float | 本次实际使用置信度阈值 | | | |
+| v1.0.0 | 镜头遮挡检测 | 同上 | POST | area_ratio | O | float | 遮挡面积判定阈值 0~1；不传读配置 | area_ratio | R | float | 本次实际使用面积判定阈值 | | | |
+| v1.0.0 | 镜头遮挡检测 | 同上 | POST | | | | | is_occluded | R | boolean | 是否镜头近处遮挡 | | | |
+| v1.0.0 | 镜头遮挡检测 | 同上 | POST | | | | | occlusion_area_ratio | R | float | 遮挡面积占比 0~1 | | | |
+| v1.0.0 | 镜头遮挡检测 | 同上 | POST | | | | | score | R | float | 检测分数 0~1 | | | |
+| v1.0.0 | 镜头遮挡检测 | 同上 | POST | | | | | message | R | string | 中文提示 | | | |
+
+---
+
 ### 2.1 健康检查 — 明细行
 
 | 版本说明 | 功能类型 | URL地址 说明 | 请求动作 | 参数说明【请求】 | R/O | 类型 | 类型说明 | 参数说明【应答】 | R/O | 类型 | 类型说明 | 错误码 | 错误码说明 | 样例说明 |
@@ -560,4 +790,4 @@
 
 ---
 
-*文档版本：v1.0.0 | 更新日期：2026-05-25 | 对应仓库：jy-algorithm-app-screen_det-server*
+*文档版本：v1.1.0 | 更新日期：2026-07-14 | 对应仓库：jy-algorithm-app-screen_det-server*

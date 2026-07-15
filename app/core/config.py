@@ -76,12 +76,45 @@ class ScreenDetectionConfig:
 
 
 @dataclass(frozen=True)
+class QualityAbnormalDetectionConfig:
+    enabled: bool = True
+    analyze_max_side: int = 960
+    overlay_top_ratio: float = 0.08
+    overlay_bottom_ratio: float = 0.05
+    color_cast_lab_threshold: float = 18.0
+    color_cast_imbalance_threshold: float = 0.25
+    snow_noise_threshold: float = 14.0
+    snow_edge_density_threshold: float = 0.18
+    blur_laplacian_threshold: float = 450.0
+    blur_edge_density_threshold: float = 0.06
+    glitch_band_laplacian_threshold: float = 450.0
+    glitch_band_saturation_threshold: float = 28.0
+    glitch_min_area_ratio: float = 0.18
+    glitch_grid_rows: int = 16
+    glitch_grid_cols: int = 24
+
+
+@dataclass(frozen=True)
+class OcclusionDetectionConfig:
+    enabled: bool = True
+    analyze_max_side: int = 960
+    threshold: float = 0.25
+    area_ratio: float = 0.2
+    yolo_seg_weights_path: str = "model/occlusion.pt"
+    yolo_imgsz: int = 960
+    yolo_device: str = "cpu"
+    yolo_retina_masks: bool = True
+
+
+@dataclass(frozen=True)
 class Settings:
     app: AppConfig
     server: ServerConfig
     gpu: GpuConfig
     detection: DetectionConfig
     screen_detection: ScreenDetectionConfig
+    quality_abnormal_detection: QualityAbnormalDetectionConfig
+    occlusion_detection: OcclusionDetectionConfig
     logging: LoggingConfig
     runtime: RuntimeConfig
 
@@ -118,6 +151,12 @@ def get_settings() -> Settings:
         gpu=GpuConfig(**gpu_data),
         detection=DetectionConfig(**detection_data),
         screen_detection=ScreenDetectionConfig(**screen_data),
+        quality_abnormal_detection=QualityAbnormalDetectionConfig(
+            **_section(raw, "quality_abnormal_detection")
+        ),
+        occlusion_detection=OcclusionDetectionConfig(
+            **_section(raw, "occlusion_detection")
+        ),
         logging=LoggingConfig(**_section(raw, "logging")),
         runtime=RuntimeConfig(**_section(raw, "runtime")),
     )
