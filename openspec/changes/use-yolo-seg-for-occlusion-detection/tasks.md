@@ -2,12 +2,12 @@
 
 - [x] 1.1 确认运行环境已安装 `ultralytics` 与 `torch`，并在缺失时给出清晰错误提示。
 - [x] 1.2 更新 `app/core/config.py` 的 `OcclusionDetectionConfig`，新增或明确 `threshold`、`area_ratio`、`yolo_imgsz`、`yolo_device`、`yolo_retina_masks` 等 YOLO 推理配置。
-- [x] 1.3 更新 `config.toml` 的 `[occlusion_detection]` 默认值：`backend="yolo_seg"`、`yolo_seg_weights_path="model/best.pt"`、`area_ratio=0.2`、`threshold=0.25`、`yolo_imgsz=960`。
+- [x] 1.3 更新 `config.toml` 的 `[occlusion_detection]` 默认值：`yolo_seg_weights_path="model/best.pt"`、`area_ratio=0.2`、`threshold=0.25`、`yolo_imgsz=960`。
 - [x] 1.4 确认 `model/best.pt` 路径解析基于项目根目录，避免不同启动目录导致权重找不到。
 
 ## 2. YOLO-seg 遮挡检测后端
 
-- [x] 2.1 在 `app/services/occlusion_detector.py` 中实现 `yolo_seg` 后端分支，并保留现有 `opencv` 后端分支。
+- [x] 2.1 在 `app/services/occlusion_detector.py` 中实现 `yolo_seg` 后端分支，并移除现有 `opencv` 后端分支。
 - [x] 2.2 实现 YOLO 模型加载函数，加载 `model/best.pt` 并校验权重文件存在。
 - [x] 2.3 实现模型实例缓存，避免每次请求重复加载权重。
 - [x] 2.4 实现模型缓存清理函数，供测试和配置重载场景使用。
@@ -55,7 +55,7 @@
 - [x] 6.4 文档说明响应返回本次实际使用的 `threshold` 和 `area_ratio`。
 - [x] 6.5 文档说明第一版默认阈值：`threshold=0.25`、`area_ratio=0.2`。
 - [x] 6.6 文档记录正常图 1000 张验证结果：`area_ratio > 0.2` 误报 0 张。
-- [x] 6.7 文档说明 OpenCV 后端仍可通过配置回退。
+- [x] 6.7 文档说明不再支持 OpenCV 遮挡后端或配置回退。
 - [x] 6.8 更新 README 或部署说明，补充 `ultralytics/torch` 依赖、模型文件路径和 GPU/CPU/MPS 注意事项。
 
 ## 7. 最终验证
@@ -64,13 +64,13 @@
 - [x] 7.2 启动本地服务并调用 `/detect_occlusion`，确认 HTTP 响应结构兼容。
 - [x] 7.3 调用 `/detect_occlusion` 时分别验证默认阈值和请求覆盖阈值，确认响应返回实际使用的 `threshold` 与 `area_ratio`。
 - [x] 7.4 使用 `model/best.pt` 对 1000 张正常图跑批量验证，确认 `occlusion_area_ratio > 0.2` 命中 0 张。
-- [x] 7.5 对真实遮挡样例输出可视化 mask，并人工确认预测区域比 OpenCV 版本更贴近真实遮挡物。
+- [x] 7.5 对真实遮挡样例输出可视化 mask，并人工确认预测区域贴近真实遮挡物。
 - [x] 7.6 记录最终验证命令和结果。
 
 ## 8. 验证记录
 
-- [x] `/Users/zhangshen/miniconda3/envs/screen_det/bin/python -m unittest tests.test_quality_occlusion`：22 tests OK。
-- [x] `/Users/zhangshen/miniconda3/envs/screen_det/bin/python -m unittest discover`：22 tests OK。
+- [x] `/Users/zhangshen/miniconda3/envs/screen_det/bin/python -m unittest tests.test_quality_occlusion`：24 tests OK。
+- [x] `/Users/zhangshen/miniconda3/envs/screen_det/bin/python -m unittest discover`：24 tests OK。
 - [x] `/Users/zhangshen/miniconda3/envs/screen_det/bin/python -m compileall app scripts tests`：通过。
 - [x] `openspec validate use-yolo-seg-for-occlusion-detection`：valid。
 - [x] 本地启动 `uvicorn app.main:app --host 127.0.0.1 --port 8891`，调用 `/detect_occlusion` 默认阈值返回 `threshold=0.25`、`area_ratio=0.2`，请求覆盖返回 `threshold=0.5`、`area_ratio=0.15`。

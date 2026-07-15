@@ -21,7 +21,7 @@
 - 使用配置化阈值控制误报：默认 `threshold=0.25`、`area_ratio=0.2`。
 - 在成功响应中返回本次实际使用的 `threshold` 和 `area_ratio`。
 - 缓存 YOLO 模型实例，避免每次请求重复加载权重。
-- 保留 OpenCV 后端作为可配置回退。
+- 移除 OpenCV 遮挡后端和相关配置，避免线上存在两套面积语义。
 - 增加验证脚本，支持对正常图集合统计误报数量。
 
 **Non-Goals:**
@@ -36,7 +36,7 @@
 
 ### Decision 1: 默认后端切换为 `yolo_seg`
 
-将 `[occlusion_detection].backend` 默认值从 `opencv` 改为 `yolo_seg`。OpenCV 规则在遮挡区域定位上已经不可靠，而 YOLO 分割可以直接输出遮挡 mask，更符合接口里 `occlusion_area_ratio` 的语义。
+移除 `[occlusion_detection].backend` 配置，遮挡检测固定使用 YOLO-seg。OpenCV 规则在遮挡区域定位上已经不可靠，而 YOLO 分割可以直接输出遮挡 mask，更符合接口里 `occlusion_area_ratio` 的语义。
 
 备选方案：
 
@@ -44,7 +44,7 @@
 - YOLO 检测框而非分割：可以判断是否遮挡，但面积占比会被 bbox 放大，不适合当前接口。
 - YOLO 分割：能给出像素级 mask，最适合当前“是否遮挡 + 遮挡面积占比”的接口。
 
-结论：使用 YOLO segmentation，并保留 OpenCV 可配置回退。
+结论：只使用 YOLO segmentation，不保留 OpenCV 遮挡回退。
 
 ### Decision 2: 模型路径默认使用 `model/best.pt`
 
@@ -52,7 +52,6 @@
 
 ```toml
 [occlusion_detection]
-backend = "yolo_seg"
 yolo_seg_weights_path = "model/best.pt"
 ```
 
@@ -206,14 +205,14 @@ yolo_device = "0"
 - [Risk] 验证集和训练数据仍偏少，当前指标不能代表所有真实场景。→ Mitigation: 第一版以保守阈值上线，并用正常图集和真实遮挡图集持续评估误报/漏检。
 - [Risk] `area_ratio=0.2` 可能漏掉细线、小面积贴边遮挡。→ Mitigation: 后续基于正样本召回率评估是否下调到 `0.1~0.15`，或补充线状遮挡数据重新训练。
 - [Risk] Mac MPS 推理可能不稳定。→ Mitigation: 配置支持 `cpu`、`mps`、CUDA 设备；默认文档建议生产 CUDA，本地可 CPU 小批量验证。
-- [Risk] YOLO 依赖增加部署复杂度。→ Mitigation: 文档明确 `ultralytics/torch` 依赖；保留 OpenCV 后端用于排查和临时回退。
+- [Risk] YOLO 依赖增加部署复杂度。→ Mitigation: 文档明确 `ultralytics/torch` 依赖；部署问题直接返回可定位错误，不自动切换到旧规则。
 - [Risk] 多 worker 部署会为每个 worker 加载一份 YOLO 权重，占用更多显存。→ Mitigation: 文档建议 YOLO 后端部署时控制 worker 数，或使用单独推理服务。
 - [Risk] 只返回 `is_occluded=false` 时将低面积 mask 归零，可能隐藏调试信息。→ Mitigation: 生产接口保持简洁；调试脚本和日志可记录原始 mask 面积与 conf。
 
 ## Migration Plan
 
-1. 更新配置默认值：`backend="yolo_seg"`、`yolo_seg_weights_path="model/best.pt"`、`area_ratio=0.2`、`threshold=0.25`、`yolo_imgsz=960`。
-2. 实现 YOLO-seg 后端，并保留 OpenCV 后端。
+1. 更新配置默认值：移除 `backend` 与 OpenCV 遮挡参数，保留 `yolo_seg_weights_path="model/best.pt"`、`area_ratio=0.2`、`threshold=0.25`、`yolo_imgsz=960`。
+2. 实现 YOLO-seg 后端，并移除 OpenCV 遮挡后端。
 3. 增加模型缓存和缓存重置逻辑。
 4. 更新 `/config` 输出、API 文档和 README。
 5. 运行单元测试和接口测试。
@@ -222,8 +221,8 @@ yolo_device = "0"
 
 Rollback：
 
-- 将 `[occlusion_detection].backend` 改回 `opencv` 即可回退到旧后端。
-- 如果模型文件不可用或 YOLO 依赖不可用，应优先通过配置回退，而不是修改接口。
+- 如需恢复旧 OpenCV 遮挡规则，应通过新的变更重新引入，不再通过配置切换。
+- 如果模型文件不可用或 YOLO 依赖不可用，应修复部署环境或临时回滚代码版本。
 
 ## Open Questions
 

@@ -39,17 +39,13 @@
 ### Requirement: 遮挡检测后端必须支持 YOLO 分割权重 best.pt
 系统 SHALL 支持通过配置启用 YOLO segmentation 遮挡检测后端，并默认使用当前项目下的 `model/best.pt` 作为遮挡分割权重。
 
-#### Scenario: 配置启用 YOLO 分割后端
-- **WHEN** `[occlusion_detection].backend` 配置为 `yolo_seg` 且 `yolo_seg_weights_path` 指向可读的 `model/best.pt`
+#### Scenario: 默认使用 YOLO 分割后端
+- **WHEN** `[occlusion_detection].yolo_seg_weights_path` 指向可读的 `model/best.pt`
 - **THEN** 系统 SHALL 使用该 YOLO 分割模型执行 `/detect_occlusion` 遮挡检测
 
 #### Scenario: 权重文件不存在
-- **WHEN** `[occlusion_detection].backend` 配置为 `yolo_seg`，但 `yolo_seg_weights_path` 指向的权重文件不存在或不可读
+- **WHEN** `[occlusion_detection].yolo_seg_weights_path` 指向的权重文件不存在或不可读
 - **THEN** 系统 SHALL 返回明确错误，错误信息 MUST 包含权重路径，便于定位部署问题
-
-#### Scenario: 后端配置不支持
-- **WHEN** `[occlusion_detection].backend` 配置为系统不支持的值
-- **THEN** 系统 SHALL 返回明确错误，错误信息 MUST 包含不支持的后端名称
 
 ### Requirement: YOLO 分割结果必须用于计算遮挡面积占比
 系统 SHALL 使用 YOLO segmentation 输出的遮挡 mask 计算 `occlusion_area_ratio`，该字段表示遮挡 mask 并集面积占整张图像面积的比例，取值范围 SHALL 为 `0` 到 `1`。
@@ -81,16 +77,12 @@
 - **WHEN** 使用 `model/best.pt`、`imgsz=960`、`threshold=0.25` 对 1000 张已确认正常无遮挡图片执行批量验证
 - **THEN** 系统 SHALL 在 `occlusion_area_ratio > 0.2` 的判定口径下得到 0 张遮挡误报
 
-### Requirement: YOLO 遮挡后端必须可配置并可回退
-系统 SHALL 通过 `[occlusion_detection]` 配置 YOLO 遮挡后端的权重路径、推理尺寸、置信度阈值、面积阈值和推理设备，并保留 OpenCV 后端作为可选回退。`config.toml` 中的 `threshold` 和 `area_ratio` SHALL 作为请求未传阈值时的默认值。
+### Requirement: YOLO 遮挡后端必须可配置且不支持 OpenCV 回退
+系统 SHALL 通过 `[occlusion_detection]` 配置 YOLO 遮挡后端的权重路径、推理尺寸、置信度阈值、面积阈值和推理设备。系统 SHALL NOT 提供 OpenCV 遮挡后端或后端切换配置。`config.toml` 中的 `threshold` 和 `area_ratio` SHALL 作为请求未传阈值时的默认值。
 
 #### Scenario: 使用默认配置
 - **WHEN** 服务使用默认 `[occlusion_detection]` 配置启动
 - **THEN** 系统 SHALL 默认启用 `yolo_seg` 后端，使用 `model/best.pt`、`imgsz=960`、`threshold=0.25` 和 `area_ratio=0.2`
-
-#### Scenario: 配置回退到 OpenCV
-- **WHEN** `[occlusion_detection].backend` 配置为 `opencv`
-- **THEN** 系统 SHALL 使用现有 OpenCV 规则后端执行遮挡检测，便于排查模型依赖或部署问题
 
 #### Scenario: 指定推理设备
 - **WHEN** `[occlusion_detection].yolo_device` 被配置为 `cpu`、`mps`、`0`、`1` 或其他 Ultralytics 支持的设备标识
@@ -108,5 +100,5 @@
 - **THEN** 系统 SHALL 复用已加载的模型实例执行推理
 
 #### Scenario: 配置或权重路径变更
-- **WHEN** 测试或运行时调用配置重载逻辑导致权重路径或后端配置变化
+- **WHEN** 测试或运行时调用配置重载逻辑导致权重路径或 YOLO 推理配置变化
 - **THEN** 系统 SHALL 能够清理或重建遮挡模型缓存，避免继续使用过期模型
