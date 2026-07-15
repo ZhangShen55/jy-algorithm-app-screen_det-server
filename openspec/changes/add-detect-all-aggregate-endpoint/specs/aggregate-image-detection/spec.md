@@ -8,7 +8,7 @@
 
 - **WHEN** 客户端提交合法 JSON 请求体且包含可解码的 `image`
 - **THEN** 系统 SHALL 返回 HTTP 200，并返回 `tilt`、`screen`、`quality_abnormal`、`occlusion` 四个结果块
-- **AND** 顶层响应 SHALL 包含 `code`、`msg`、`start_time`、`end_time`、`cost_ms`、`executed_modules`、`failed_modules` 和 `effective_params`
+- **AND** 顶层响应 SHALL 包含 `code`、`msg`、`start_time`、`end_time`、`cost_ms`、`executed_modules`、`failed_modules`、`effective_params` 和 `problem_types`
 
 #### Scenario: 请求图片非法
 
@@ -71,6 +71,23 @@
 
 聚合检测响应 SHALL 保持各检测模块结果相互独立。每个已执行模块的结果块 SHALL 包含 `code`、`msg` 和 `cost_ms`。未执行模块结果 SHALL 为 `null`。
 
+#### Scenario: 顶层 problem_types 汇总模块级业务问题
+
+- **WHEN** 一个或多个已执行且成功的子模块检测到业务问题
+- **THEN** 顶层 `problem_types` SHALL 返回命中的模块级业务问题枚举数组
+
+#### Scenario: 顶层 problem_types 无业务问题
+
+- **WHEN** 所有已执行且成功的子模块均未检测到业务问题
+- **THEN** 顶层 `problem_types` SHALL 为空数组
+
+#### Scenario: 子模块失败不写入 problem_types
+
+- **WHEN** 某个子模块执行失败并返回 `code=500`
+- **THEN** 该模块 SHALL 加入 `failed_modules`
+- **AND** 系统不 SHALL 因该模块失败而向 `problem_types` 添加业务问题枚举
+- **AND** 该模块失败 SHALL 通过对应模块结果块和 `failed_modules` 表达
+
 #### Scenario: 倾斜结果块
 
 - **WHEN** `tilt` 模块被执行且检测成功
@@ -95,6 +112,49 @@
 - **WHEN** `occlusion` 模块被执行且检测成功
 - **THEN** `occlusion` 结果块 SHALL 包含 `code=200`、`msg`、`cost_ms`、`is_occluded`、`occlusion_area_ratio`、`score`、`threshold`、`area_ratio` 和 `message`
 - **AND** `threshold` 和 `area_ratio` SHALL 返回本次遮挡检测实际使用值
+
+### Requirement: 聚合检测 problem_types 必须使用稳定模块级枚举
+
+系统 SHALL 使用稳定字符串枚举表达顶层模块级业务问题类型，便于北向按模块快速判断。具体问题细节 SHALL 保留在对应模块结果块中。
+
+第一版 `problem_types` 合法值 SHALL 包含：
+
+| 枚举 | 说明 |
+|------|------|
+| `tilt` | 画面歪斜 |
+| `screen` | 屏幕/幕布检测发现业务问题，具体 label 或是否未识别看 `screen` 结果块 |
+| `quality_abnormal` | 画面异常，具体类型看 `quality_abnormal.abnormal_types` |
+| `occlusion` | 镜头遮挡 |
+
+#### Scenario: 倾斜问题进入 problem_types
+
+- **WHEN** `tilt.code=200` 且 `tilt.result.is_tilted=true`
+- **THEN** `problem_types` SHALL 包含 `"tilt"`
+
+#### Scenario: 屏幕问题进入 problem_types
+
+- **WHEN** `screen.code=200` 且 `screen.primary.label` 为 `0`、`1` 或 `2`
+- **THEN** `problem_types` SHALL 包含 `"screen"`
+
+#### Scenario: 正常屏不进入 problem_types
+
+- **WHEN** `screen.code=200` 且 `screen.primary.label=3`
+- **THEN** `problem_types` 不 SHALL 包含 `"screen"`
+
+#### Scenario: 未识别到屏幕进入 problem_types
+
+- **WHEN** `screen.code=200` 且 `screen.primary=null`
+- **THEN** `problem_types` SHALL 包含 `"screen"`
+
+#### Scenario: 画面异常进入 problem_types
+
+- **WHEN** `quality_abnormal.code=200` 且 `quality_abnormal.is_abnormal=true`
+- **THEN** `problem_types` SHALL 包含 `"quality_abnormal"`
+
+#### Scenario: 遮挡进入 problem_types
+
+- **WHEN** `occlusion.code=200` 且 `occlusion.is_occluded=true`
+- **THEN** `problem_types` SHALL 包含 `"occlusion"`
 
 ### Requirement: 聚合检测必须隔离子模块失败
 

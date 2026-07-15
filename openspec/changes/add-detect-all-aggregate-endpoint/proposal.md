@@ -20,6 +20,7 @@
   - `quality_abnormal`
   - `occlusion`
 - 响应顶层返回 `effective_params`，明确本次实际使用的阈值、模块列表和 YOLO 设备。
+- 响应顶层在 `effective_params` 后返回 `problem_types`，使用模块级枚举直接汇总哪些检测模块发现业务问题。
 - 聚合接口内部应尽量复用一次图片解码结果，避免四个检测模块各自重复解码。
 - 顶层响应用于表达聚合请求整体是否完成；各子模块通过自己的 `code`、`msg` 和 `cost_ms` 表达局部成功或失败。
 - 保持已有 `/detect_tilt`、`/detect_screen`、`/detect_quality_abnormal`、`/detect_occlusion`、`/detect_inspect` 接口兼容。

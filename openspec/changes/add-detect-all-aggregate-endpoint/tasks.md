@@ -5,10 +5,11 @@
 - [ ] 1.3 更新 `/config` 与 `/config/reload` 响应，返回 `aggregate_detection` 配置。
 - [ ] 1.4 新增 `app/schemas/aggregate.py`，定义 `/detect_all` 请求模型。
 - [ ] 1.5 新增 `app/schemas/aggregate.py`，定义 `tilt`、`screen`、`quality_abnormal`、`occlusion` 四个结果块模型。
-- [ ] 1.6 新增聚合响应模型，包含 `code`、`msg`、`start_time`、`end_time`、`cost_ms`、`executed_modules`、`failed_modules`、`effective_params` 和四个模块结果块。
+- [ ] 1.6 新增聚合响应模型，包含 `code`、`msg`、`start_time`、`end_time`、`cost_ms`、`executed_modules`、`failed_modules`、`effective_params`、`problem_types` 和四个模块结果块。
 - [ ] 1.7 为 `include` 模块枚举增加校验，合法值限定为 `tilt`、`screen`、`quality_abnormal`、`occlusion`。
 - [ ] 1.8 为 `screen_conf`、`screen_iou`、`occlusion_threshold`、`occlusion_area_ratio` 增加 `0~1` 校验，为 `tilt_threshold` 增加非负校验。
 - [ ] 1.9 为 `device` 增加配置读取与格式校验，支持 `"cpu"`、`"cuda:0"`、`"cuda:1"` 等字符串；`device` 不作为请求字段开放。
+- [ ] 1.10 定义顶层 `problem_types` 响应字段，枚举限定为 `tilt`、`screen`、`quality_abnormal`、`occlusion`。
 
 ## 2. 服务层编排
 
@@ -23,7 +24,8 @@
 - [ ] 2.9 实现子模块异常捕获，默认不影响其他模块，失败模块进入 `failed_modules`。
 - [ ] 2.10 第一版固定串行执行，不实现聚合层并发和子模块超时配置。
 - [ ] 2.11 聚合接口中的屏幕检测和遮挡检测使用 `[aggregate_detection].device` 指定的 YOLO 推理设备。
-- [ ] 2.12 在聚合响应中计算顶层 `cost_ms` 和中文 `msg`。
+- [ ] 2.12 根据已成功执行的子模块结果生成顶层 `problem_types`，汇总 `tilt`、`screen`、`quality_abnormal`、`occlusion`。
+- [ ] 2.13 在聚合响应中计算顶层 `cost_ms` 和中文 `msg`。
 
 ## 3. API 路由
 
@@ -41,11 +43,12 @@
 - [ ] 4.3 增加聚合服务层测试，使用 mock 子模块验证四个结果块结构。
 - [ ] 4.4 增加子模块失败隔离测试，验证单模块失败时其他模块仍返回。
 - [ ] 4.5 增加 `[aggregate_detection]` 默认阈值、`device` 配置和响应 `effective_params` 回显测试。
-- [ ] 4.6 增加 `/detect_all` HTTP 路由测试，验证成功响应结构。
-- [ ] 4.7 增加 `/api/v1/detect_all` HTTP 路由测试，验证前缀路由可用。
-- [ ] 4.8 增加非法 JSON、缺失 `image`、非法 Base64 返回 HTTP 400 的测试。
-- [ ] 4.9 增加 `/config` 输出包含 `aggregate_detection` 的测试。
-- [ ] 4.10 运行现有倾斜、屏幕、画面异常、遮挡测试，确保分接口兼容。
+- [ ] 4.6 增加 `problem_types` 生成测试，覆盖无问题、倾斜、屏幕异常或未识别、画面异常、遮挡和子模块失败不进入业务问题数组。
+- [ ] 4.7 增加 `/detect_all` HTTP 路由测试，验证成功响应结构。
+- [ ] 4.8 增加 `/api/v1/detect_all` HTTP 路由测试，验证前缀路由可用。
+- [ ] 4.9 增加非法 JSON、缺失 `image`、非法 Base64 返回 HTTP 400 的测试。
+- [ ] 4.10 增加 `/config` 输出包含 `aggregate_detection` 的测试。
+- [ ] 4.11 运行现有倾斜、屏幕、画面异常、遮挡测试，确保分接口兼容。
 
 ## 5. 文档与验收
 

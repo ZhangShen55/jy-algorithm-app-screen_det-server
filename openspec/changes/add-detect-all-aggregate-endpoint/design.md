@@ -120,13 +120,14 @@ occlusion
     "include": ["tilt", "screen", "quality_abnormal", "occlusion"],
     "device": "cpu"
   },
+  "problem_types": ["tilt", "screen", "quality_abnormal"],
   "tilt": {
     "code": 200,
     "msg": "检测完成",
     "cost_ms": 20.3,
     "result": {
-      "is_tilted": false,
-      "angle": 0.8
+      "is_tilted": true,
+      "angle": 2.3
     }
   },
   "screen": {
@@ -134,13 +135,13 @@ occlusion
     "msg": "检测完成",
     "cost_ms": 80.1,
     "primary": {
-      "label": 3,
+      "label": 1,
       "confidence": 0.91,
       "box": [100.0, 50.0, 900.0, 500.0]
     },
     "detections": [
       {
-        "label": 3,
+        "label": 1,
         "confidence": 0.91,
         "box": [100.0, 50.0, 900.0, 500.0]
       }
@@ -169,6 +170,35 @@ occlusion
     "area_ratio": 0.2,
     "message": "未检测到镜头遮挡"
   }
+}
+```
+
+`problem_types` 是给北向快速判断用的顶层模块级业务结论，放在 `effective_params` 下方。它不替代各子模块明细；北向如果需要具体角度、屏幕 label、异常分数、遮挡面积，仍读取 `tilt`、`screen`、`quality_abnormal`、`occlusion`。
+
+推荐结构：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `problem_types` | string[] | 顶层业务问题模块枚举数组；无业务问题时为空数组 |
+
+第一版 `problem_types` 固定使用模块级枚举：
+
+| 枚举 | 来源 | 判定规则 |
+|------|------|----------|
+| `tilt` | `tilt` | `tilt.code=200` 且 `tilt.result.is_tilted=true` |
+| `screen` | `screen` | `screen.code=200` 且 `screen.primary=null`，或 `screen.primary.label` 为 `0`、`1`、`2` |
+| `quality_abnormal` | `quality_abnormal` | `quality_abnormal.code=200` 且 `quality_abnormal.is_abnormal=true` |
+| `occlusion` | `occlusion` | `occlusion.code=200` 且 `occlusion.is_occluded=true` |
+
+`screen.primary.label=3` 表示正常屏，不加入 `problem_types`。如果某个子模块未执行或执行失败，不写入 `problem_types`；模块执行失败由 `failed_modules` 和对应模块 `code=500` 表达，避免把“业务问题”和“服务异常”混在一起。
+
+例如 `problem_types=["tilt"]` 表示：本次成功执行的模块中，只有倾斜检测发现业务问题；如果 `screen`、`quality_abnormal`、`occlusion` 也都在 `executed_modules` 且不在 `failed_modules` 中，则它们对应结果块应表达无异常。
+
+无业务问题时：
+
+```json
+{
+  "problem_types": []
 }
 ```
 
@@ -287,7 +317,8 @@ flowchart TD
     K --> L["画面异常 quality_abnormal"]
     L --> M["遮挡检测 occlusion<br/>YOLO-seg device 来自 config.toml"]
     M --> N["汇总 executed_modules<br/>failed_modules<br/>effective_params"]
-    N --> O["返回聚合响应 HTTP 200"]
+    N --> P["生成 problem_types<br/>汇总模块级业务问题"]
+    P --> O["返回聚合响应 HTTP 200"]
 ```
 
 ### 参数默认值与请求覆盖流程
@@ -308,6 +339,7 @@ flowchart TD
     J --> K
     K --> L["device 固定来自 config.toml<br/>不允许请求覆盖"]
     L --> M["写入响应 effective_params"]
+    M --> N["按子模块结果生成 problem_types"]
 ```
 
 ### 子模块失败隔离流程
