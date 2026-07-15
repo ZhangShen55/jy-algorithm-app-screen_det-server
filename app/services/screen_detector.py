@@ -227,10 +227,6 @@ def detect_screen_from_base64_list(
             f"Too many images: {len(images_base64)} > max_batch_size={screen_cfg.max_batch_size}"
         )
 
-    _holder.load()
-    model = _holder.model
-    device = _holder.device
-
     decoded: list[np.ndarray] = []
     for index, image_base64 in enumerate(images_base64):
         try:
@@ -238,18 +234,40 @@ def detect_screen_from_base64_list(
         except ValueError as exc:
             raise ValueError(f"images[{index}]: {exc}") from exc
 
+    return detect_screen_from_arrays(decoded, conf=conf_used, iou=iou_used)
+
+
+def detect_screen_from_arrays(
+    images: list[np.ndarray],
+    conf: float,
+    iou: float,
+    device: str | int | None = None,
+) -> tuple[list[ScreenImageDetectResult], float, float]:
+    settings = get_settings()
+    screen_cfg = settings.screen_detection
+    allowed = frozenset(screen_cfg.allowed_class_ids)
+
+    if len(images) > screen_cfg.max_batch_size:
+        raise ValueError(
+            f"Too many images: {len(images)} > max_batch_size={screen_cfg.max_batch_size}"
+        )
+
+    _holder.load()
+    model = _holder.model
+    device_used = _holder.device if device is None else device
+
     results: list[ScreenImageDetectResult] = []
-    if len(decoded) == 1:
-        predict_inputs: list[np.ndarray] | np.ndarray = decoded[0]
+    if len(images) == 1:
+        predict_inputs: list[np.ndarray] | np.ndarray = images[0]
     else:
-        predict_inputs = decoded
+        predict_inputs = images
 
     start = time.time()
     yolo_results = model.predict(
         predict_inputs,
-        conf=conf_used,
-        iou=iou_used,
-        device=device,
+        conf=conf,
+        iou=iou,
+        device=device_used,
         verbose=False,
     )
     batch_elapsed_ms = (time.time() - start) * 1000
@@ -280,4 +298,4 @@ def detect_screen_from_base64_list(
         else:
             logger.info("screen_detect index=%s no allowed detections", index)
 
-    return results, conf_used, iou_used
+    return results, conf, iou

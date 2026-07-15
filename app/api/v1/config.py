@@ -25,6 +25,14 @@ def _occlusion_detection_dict() -> dict:
     return get_settings().occlusion_detection.__dict__
 
 
+def _aggregate_detection_dict() -> dict:
+    cfg = get_settings().aggregate_detection
+    return {
+        **cfg.__dict__,
+        "default_modules": list(cfg.default_modules),
+    }
+
+
 @router.get("/config")
 async def get_runtime_config() -> dict:
     settings = get_settings()
@@ -36,6 +44,7 @@ async def get_runtime_config() -> dict:
         "screen_detection": _screen_detection_dict(),
         "quality_abnormal_detection": _quality_abnormal_detection_dict(),
         "occlusion_detection": _occlusion_detection_dict(),
+        "aggregate_detection": _aggregate_detection_dict(),
         "runtime": settings.runtime.__dict__,
     }
 
@@ -54,4 +63,8 @@ async def reload_runtime_config() -> dict:
         },
         "quality_abnormal_detection": settings.quality_abnormal_detection.__dict__,
         "occlusion_detection": settings.occlusion_detection.__dict__,
+        "aggregate_detection": {
+            **settings.aggregate_detection.__dict__,
+            "default_modules": list(settings.aggregate_detection.default_modules),
+        },
     }

@@ -112,6 +112,7 @@ async def root() -> dict:
         "detect_tilt": f"{settings.app.api_prefix}/detect_tilt",
         "detect_screen": f"{settings.app.api_prefix}/detect_screen",
         "detect_inspect": f"{settings.app.api_prefix}/detect_inspect",
+        "detect_all": f"{settings.app.api_prefix}/detect_all",
         "detect_quality_abnormal": f"{settings.app.api_prefix}/detect_quality_abnormal",
         "detect_occlusion": f"{settings.app.api_prefix}/detect_occlusion",
     }

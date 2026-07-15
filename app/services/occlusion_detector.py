@@ -130,10 +130,11 @@ def _detect_yolo_seg(
     config: OcclusionDetectionConfig,
     threshold: float,
     area_threshold: float,
+    device_override: str | int | None = None,
 ) -> OcclusionDetectResult:
     _yolo_holder.load()
     model = _yolo_holder.model
-    device = _yolo_holder.device
+    device = _yolo_holder.device if device_override is None else device_override
     yolo_results = model.predict(
         source=bgr,
         imgsz=config.yolo_imgsz,
@@ -255,4 +256,28 @@ def detect_occlusion_from_base64(
         settings.runtime.max_image_bytes,
         config.analyze_max_side,
     )
-    return _detect_yolo_seg(image.bgr, config, threshold_used, area_ratio_used)
+    return detect_occlusion_from_array(image.bgr, config, threshold_used, area_ratio_used)
+
+
+def detect_occlusion_from_array(
+    bgr: np.ndarray,
+    config: OcclusionDetectionConfig,
+    threshold: float,
+    area_ratio: float,
+    device: str | int | None = None,
+) -> OcclusionDetectResult:
+    if not config.enabled:
+        return OcclusionDetectResult(
+            False,
+            0.0,
+            0.0,
+            round(threshold, 4),
+            round(area_ratio, 4),
+            "镜头遮挡检测未启用",
+        )
+    if not 0 <= threshold <= 1:
+        raise ValueError("threshold must be between 0 and 1")
+    if not 0 <= area_ratio <= 1:
+        raise ValueError("area_ratio must be between 0 and 1")
+
+    return _detect_yolo_seg(bgr, config, threshold, area_ratio, device_override=device)

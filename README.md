@@ -6,6 +6,7 @@
 - **屏幕类型检测** `/detect_screen`：YOLO GPU（`model/screen.pt`）
 - **画面异常检测** `/detect_quality_abnormal`：OpenCV CPU 规则，覆盖虚焦、偏色、雪花噪点、花屏
 - **镜头遮挡检测** `/detect_occlusion`：YOLO-seg 单类分割，输出遮挡面积占比
+- **全量聚合检测** `/detect_all`：单图一次返回倾斜、屏幕、画面异常、遮挡检测结果
 
 | 项目 | 说明 |
 |------|------|
@@ -40,7 +41,7 @@
 ## 功能特性
 
 - 单图 / 批量检测：JSON `{"images": "<base64>"}` 或数组
-- **异步接口** `/detect_tilt`、`/detect_screen`、`/detect_quality_abnormal`、`/detect_occlusion`：CPU/GPU 推理在线程池执行
+- **异步接口** `/detect_tilt`、`/detect_screen`、`/detect_quality_abnormal`、`/detect_occlusion`、`/detect_all`：CPU/GPU 推理在线程池执行
 - 画面异常支持多异常同时命中，枚举：`1=虚焦`、`2=偏色`、`3=雪花噪点`、`4=花屏`
 - 镜头遮挡限定为镜头前或镜头不远处遮挡，返回 `is_occluded`、`occlusion_area_ratio`、本次实际 `threshold` 与 `area_ratio`
 - YOLO **启动预加载 + GPU warmup**，health 返回 `ready` / `warmed_up`
@@ -135,6 +136,7 @@ jy-algorithm-app-screen_det-server/
 | 屏幕检测 | `/detect_screen` 或 `/api/v1/detect_screen` |
 | 画面异常检测 | `/detect_quality_abnormal` 或 `/api/v1/detect_quality_abnormal` |
 | 镜头遮挡检测 | `/detect_occlusion` 或 `/api/v1/detect_occlusion` |
+| 全量聚合检测 | `/detect_all` 或 `/api/v1/detect_all` |
 
 ---
 
@@ -388,9 +390,50 @@ python scripts/evaluate_yolo_occlusion.py --images /path/to/images --output-dir 
 
 请求可选传入 `threshold` 和 `area_ratio` 覆盖本次检测阈值；响应中的 `threshold` 与 `area_ratio` 表示实际使用值。遮挡定义限定为镜头前或镜头不远处遮挡；默认 YOLO-seg 后端的 `occlusion_area_ratio` 是有效 mask 并集面积占整图比例。
 
+### 全量聚合检测 `POST /detect_all`
+
+单图一次执行倾斜、屏幕、画面异常和遮挡检测。除 `image` 外，其他字段都可不传，默认读取 `[aggregate_detection]`；请求传入时只覆盖本次调用。
+
+```json
+{
+  "image": "base64字符串",
+  "tilt_threshold": 1.5,
+  "screen_conf": 0.25,
+  "screen_iou": 0.45,
+  "occlusion_threshold": 0.25,
+  "occlusion_area_ratio": 0.2,
+  "include": ["tilt", "screen", "quality_abnormal", "occlusion"]
+}
+```
+
+响应顶层 `problem_types` 是模块级业务问题数组，枚举值为 `tilt`、`screen`、`quality_abnormal`、`occlusion`。例如 `["tilt"]` 表示只有倾斜模块检测出问题，其他已成功执行且未出现在数组中的模块为无业务异常。
+
+```json
+{
+  "code": 200,
+  "msg": "检测完成",
+  "executed_modules": ["tilt", "screen", "quality_abnormal", "occlusion"],
+  "failed_modules": [],
+  "effective_params": {
+    "tilt_threshold": 1.5,
+    "screen_conf": 0.25,
+    "screen_iou": 0.45,
+    "occlusion_threshold": 0.25,
+    "occlusion_area_ratio": 0.2,
+    "include": ["tilt", "screen", "quality_abnormal", "occlusion"],
+    "device": "cpu"
+  },
+  "problem_types": [],
+  "tilt": { "code": 200, "result": { "is_tilted": false, "angle": 0.8, "cost_ms": 20.3 } },
+  "screen": { "code": 200, "primary": { "label": 3, "confidence": 0.91, "box": [100, 50, 900, 500] }, "detections": [] },
+  "quality_abnormal": { "code": 200, "is_abnormal": false, "abnormal_types": [], "results": [] },
+  "occlusion": { "code": 200, "is_occluded": false, "occlusion_area_ratio": 0.0 }
+}
+```
+
 ### 配置 `GET /config`
 
-返回当前 `app`、`server`、`gpu`、`detection`、`screen_detection`、`quality_abnormal_detection`、`occlusion_detection`、`runtime` 配置快照。
+返回当前 `app`、`server`、`gpu`、`detection`、`screen_detection`、`quality_abnormal_detection`、`occlusion_detection`、`aggregate_detection`、`runtime` 配置快照。
 
 ### 重载配置 `POST /config/reload`
 
@@ -490,9 +533,21 @@ yolo_seg_weights_path = "model/occlusion.pt"
 yolo_imgsz = 960
 yolo_device = "cpu"
 yolo_retina_masks = true
+
+[aggregate_detection]
+enabled = true
+default_modules = ["tilt", "screen", "quality_abnormal", "occlusion"]
+tilt_threshold = 1.5
+screen_conf = 0.25
+screen_iou = 0.45
+occlusion_threshold = 0.25
+occlusion_area_ratio = 0.2
+device = "cpu"
 ```
 
 遮挡检测只使用 YOLO-seg；`threshold` 是 YOLO 置信度阈值，`area_ratio` 是最终面积判定阈值。数据集建议：单类 `occlusion` 分割标注；可行性实验约 80–150 张遮挡正样本 + 200–500 张正常负样本，第一版可用建议 300–500 张遮挡正样本 + 500–1000 张正常负样本，生产稳定建议 1000+ 正样本 + 2000+ 正常负样本。
+
+聚合接口 `/detect_all` 使用 `[aggregate_detection]` 作为默认参数来源；分接口仍使用各自原配置段。`device` 只从配置读取，不接受请求覆盖。
 
 ### 日志与运行时
 

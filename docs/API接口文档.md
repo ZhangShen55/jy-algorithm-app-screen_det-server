@@ -62,8 +62,9 @@
 | 5 | **组合检测** | POST | `/detect_inspect` 、`/api/v1/detect_inspect` | 单图：倾斜 + 屏幕（推荐业务入口） |
 | 6 | 画面异常检测 | POST | `/detect_quality_abnormal` 、`/api/v1/detect_quality_abnormal` | OpenCV CPU：虚焦、偏色、雪花噪点、花屏 |
 | 7 | 镜头遮挡检测 | POST | `/detect_occlusion` 、`/api/v1/detect_occlusion` | YOLO-seg：镜头近处遮挡与 mask 面积占比 |
-| 8 | 配置查询 | GET | `/config` 、`/api/v1/config` | 返回当前配置快照 |
-| 9 | 配置重载 | POST | `/config/reload` 、`/api/v1/config/reload` | 热重载部分配置（见说明） |
+| 8 | 全量聚合检测 | POST | `/detect_all` 、`/api/v1/detect_all` | 单图：倾斜 + 屏幕 + 画面异常 + 镜头遮挡 |
+| 9 | 配置查询 | GET | `/config` 、`/api/v1/config` | 返回当前配置快照 |
+| 10 | 配置重载 | POST | `/config/reload` 、`/api/v1/config/reload` | 热重载部分配置（见说明） |
 
 ---
 
@@ -83,6 +84,7 @@
   "detect_tilt": "/api/v1/detect_tilt",
   "detect_screen": "/api/v1/detect_screen",
   "detect_inspect": "/api/v1/detect_inspect",
+  "detect_all": "/api/v1/detect_all",
   "detect_quality_abnormal": "/api/v1/detect_quality_abnormal",
   "detect_occlusion": "/api/v1/detect_occlusion"
 }
@@ -559,17 +561,114 @@
 
 ---
 
-## 8. 配置查询
+## 8. 全量聚合检测
+
+**URL：** `POST /detect_all` 或 `POST /api/v1/detect_all`
+
+**功能：** 单张图片一次完成倾斜检测、屏幕/幕布类型检测、画面异常检测和镜头遮挡检测。第一版固定串行执行，子模块失败不会阻断其他模块。
+
+**Content-Type：** `application/json`
+
+### 请求参数
+
+| 参数 | 必填 | 类型 | 说明 |
+|------|------|------|------|
+| image | R | string | 单张图片 Base64，支持 data URL 前缀 |
+| tilt_threshold | O | float | 倾斜阈值，单位度；不传读 `[aggregate_detection].tilt_threshold` |
+| screen_conf | O | float | 屏幕 YOLO 置信度，0–1；不传读 `[aggregate_detection].screen_conf` |
+| screen_iou | O | float | 屏幕 YOLO NMS IoU，0–1；不传读 `[aggregate_detection].screen_iou` |
+| occlusion_threshold | O | float | 遮挡 YOLO-seg 置信度，0–1；不传读 `[aggregate_detection].occlusion_threshold` |
+| occlusion_area_ratio | O | float | 遮挡面积判定阈值，0–1；不传读 `[aggregate_detection].occlusion_area_ratio` |
+| include | O | string[] | 执行模块，合法值：`tilt`、`screen`、`quality_abnormal`、`occlusion`；不传读 `[aggregate_detection].default_modules` |
+
+`device` 只允许通过 `config.toml` 配置，不作为请求字段开放。
+
+### 响应字段
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| code | int | 顶层请求执行状态，成功为 200 |
+| msg | string | 顶层中文描述 |
+| start_time / end_time | string | 北京时间毫秒时间戳字符串 |
+| cost_ms | float | 聚合总耗时 |
+| executed_modules | string[] | 本次实际执行模块 |
+| failed_modules | string[] | 执行失败模块 |
+| effective_params | object | 本次实际使用参数 |
+| problem_types | string[] | 检测出业务问题的模块级枚举，合法值：`tilt`、`screen`、`quality_abnormal`、`occlusion` |
+| tilt / screen / quality_abnormal / occlusion | object/null | 各模块结果块；未执行时为 `null` |
+
+`problem_types=["tilt"]` 表示只有倾斜模块检测出业务问题；如果其他模块在 `executed_modules` 中且不在 `failed_modules` 中，则对应结果块应表达无异常。
+
+### 响应示例
+
+```json
+{
+  "code": 200,
+  "msg": "检测完成",
+  "start_time": "1753791280207",
+  "end_time": "1753791281298",
+  "cost_ms": 1091.4,
+  "executed_modules": ["tilt", "screen", "quality_abnormal", "occlusion"],
+  "failed_modules": [],
+  "effective_params": {
+    "tilt_threshold": 1.5,
+    "screen_conf": 0.25,
+    "screen_iou": 0.45,
+    "occlusion_threshold": 0.25,
+    "occlusion_area_ratio": 0.2,
+    "include": ["tilt", "screen", "quality_abnormal", "occlusion"],
+    "device": "cpu"
+  },
+  "problem_types": [],
+  "tilt": {
+    "code": 200,
+    "msg": "检测完成",
+    "cost_ms": 20.3,
+    "result": { "is_tilted": false, "angle": 0.8, "cost_ms": 20.3 }
+  },
+  "screen": {
+    "code": 200,
+    "msg": "检测完成",
+    "cost_ms": 80.1,
+    "primary": { "label": 3, "confidence": 0.91, "box": [100.0, 50.0, 900.0, 500.0] },
+    "detections": []
+  },
+  "quality_abnormal": {
+    "code": 200,
+    "msg": "检测完成",
+    "cost_ms": 35.6,
+    "is_abnormal": false,
+    "abnormal_types": [],
+    "results": [],
+    "message": "未检测到画面异常"
+  },
+  "occlusion": {
+    "code": 200,
+    "msg": "检测完成",
+    "cost_ms": 150.2,
+    "is_occluded": false,
+    "occlusion_area_ratio": 0.0,
+    "score": 0.0,
+    "threshold": 0.25,
+    "area_ratio": 0.2,
+    "message": "未检测到镜头遮挡"
+  }
+}
+```
+
+---
+
+## 9. 配置查询
 
 **URL：** `GET /config` 或 `GET /api/v1/config`
 
 **请求：** 无
 
-**响应：** 返回 `app`、`server`、`gpu`、`detection`、`screen_detection`、`quality_abnormal_detection`、`occlusion_detection`、`runtime` 配置对象（`config.toml` 快照）。
+**响应：** 返回 `app`、`server`、`gpu`、`detection`、`screen_detection`、`quality_abnormal_detection`、`occlusion_detection`、`aggregate_detection`、`runtime` 配置对象（`config.toml` 快照）。
 
 ---
 
-## 9. 配置重载
+## 10. 配置重载
 
 **URL：** `POST /config/reload` 或 `POST /api/v1/config/reload`
 
@@ -603,6 +702,16 @@
     "yolo_imgsz": 960,
     "yolo_device": "cpu",
     "yolo_retina_masks": true
+  },
+  "aggregate_detection": {
+    "enabled": true,
+    "default_modules": ["tilt", "screen", "quality_abnormal", "occlusion"],
+    "tilt_threshold": 1.5,
+    "screen_conf": 0.25,
+    "screen_iou": 0.45,
+    "occlusion_threshold": 0.25,
+    "occlusion_area_ratio": 0.2,
+    "device": "cpu"
   }
 }
 ```
@@ -615,6 +724,7 @@
 | `[screen_detection]` 部分字段 | ✅ |
 | `[quality_abnormal_detection]` | ✅ |
 | `[occlusion_detection]` | ✅ |
+| `[aggregate_detection]` | ✅ |
 | `[gpu]`、`[server]`（含 workers、port） | ❌ 需重启 |
 
 ---
@@ -671,6 +781,13 @@
 | occlusion_detection.yolo_seg_weights_path | model/occlusion.pt | YOLO-seg 遮挡模型权重 |
 | occlusion_detection.yolo_imgsz | 960 | YOLO-seg 推理尺寸 |
 | occlusion_detection.yolo_device | cpu | YOLO-seg 推理设备 |
+| aggregate_detection.default_modules | tilt/screen/quality_abnormal/occlusion | `/detect_all` 默认执行模块 |
+| aggregate_detection.tilt_threshold | 1.5 | `/detect_all` 默认倾斜阈值 |
+| aggregate_detection.screen_conf | 0.25 | `/detect_all` 默认屏幕置信度 |
+| aggregate_detection.screen_iou | 0.45 | `/detect_all` 默认屏幕 NMS IoU |
+| aggregate_detection.occlusion_threshold | 0.25 | `/detect_all` 默认遮挡置信度 |
+| aggregate_detection.occlusion_area_ratio | 0.2 | `/detect_all` 默认遮挡面积判定阈值 |
+| aggregate_detection.device | cpu | `/detect_all` 中 YOLO 推理设备 |
 | runtime.max_image_bytes | 10485760 | 单图最大 10MB |
 
 ### YOLO-seg 遮挡后端数据建议

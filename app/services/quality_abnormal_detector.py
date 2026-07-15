@@ -199,6 +199,15 @@ def detect_quality_abnormal_from_base64(
         config.overlay_top_ratio,
         config.overlay_bottom_ratio,
     )
+    return detect_quality_abnormal_from_array(image, config)
+
+
+def detect_quality_abnormal_from_array(
+    image: PreparedImage,
+    config: QualityAbnormalDetectionConfig,
+) -> QualityAbnormalDetectResult:
+    if not config.enabled:
+        return QualityAbnormalDetectResult(False, [], [], "画面异常检测未启用")
 
     results: list[QualityAbnormalResultItem] = []
 

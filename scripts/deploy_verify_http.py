@@ -151,6 +151,47 @@ def check_occlusion_routes(base_url: str, root: Path, report: Path) -> tuple[int
     return ok, fail
 
 
+def check_detect_all_routes(base_url: str, root: Path, report: Path) -> tuple[int, int]:
+    sample = root / "test/ok_img/snapshot_计算机科学导论.png"
+    if not sample.exists():
+        report.write_text(
+            json.dumps({"error": f"missing sample {sample}"}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return 0, 1
+
+    rows = []
+    ok = fail = 0
+    b64 = base64.b64encode(sample.read_bytes()).decode()
+    payload = {
+        "image": b64,
+        "include": ["tilt", "screen", "quality_abnormal", "occlusion"],
+    }
+    for path in ("/detect_all", "/api/v1/detect_all"):
+        try:
+            status, data = post_json(base_url, path, payload)
+            good = (
+                status == 200
+                and data.get("code") == 200
+                and "effective_params" in data
+                and isinstance(data.get("problem_types"), list)
+                and data.get("tilt") is not None
+                and data.get("screen") is not None
+                and data.get("quality_abnormal") is not None
+                and data.get("occlusion") is not None
+                and set(data.get("executed_modules", []))
+                == {"tilt", "screen", "quality_abnormal", "occlusion"}
+            )
+            rows.append({"path": path, "ok": good, "response": data})
+            ok += good
+            fail += not good
+        except Exception as exc:
+            rows.append({"path": path, "ok": False, "error": str(exc)})
+            fail += 1
+    report.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+    return ok, fail
+
+
 def emit(status: str, name: str, detail: str) -> None:
     print(f"{status}\t{name}\t{detail}")
 
@@ -183,6 +224,9 @@ def main() -> int:
 
     ok, fail = check_occlusion_routes(base_url, root, report / "occlusion_routes.json")
     suites.append(("suite:occlusion_routes", ok, fail, "2 routes"))
+
+    ok, fail = check_detect_all_routes(base_url, root, report / "detect_all_routes.json")
+    suites.append(("suite:detect_all_routes", ok, fail, "2 routes"))
 
     text0 = root / "test/tilt_img/text0.jpg"
     extra_ok = 0

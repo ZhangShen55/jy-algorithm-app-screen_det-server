@@ -134,3 +134,21 @@ yolo_seg_weights_path = "model/occlusion.pt"
 yolo_imgsz = 960
 # 使用原图尺寸 mask，面积占比更稳定
 yolo_retina_masks = true
+
+[aggregate_detection]
+# 全量聚合检测总开关
+enabled = true
+# 默认执行模块；请求 include 未传时使用
+default_modules = ["tilt", "screen", "quality_abnormal", "occlusion"]
+# 倾斜角度阈值，单位度
+tilt_threshold = 1.5
+# 屏幕 YOLO 置信度阈值
+screen_conf = 0.25
+# 屏幕 YOLO NMS IoU 阈值
+screen_iou = 0.45
+# 遮挡 YOLO-seg 置信度阈值
+occlusion_threshold = 0.25
+# 遮挡面积占比判定阈值
+occlusion_area_ratio = 0.2
+# 聚合接口中 YOLO 推理设备；支持 cpu、cuda:0、cuda:1 等
+device = "cpu"

@@ -107,6 +107,18 @@ class OcclusionDetectionConfig:
 
 
 @dataclass(frozen=True)
+class AggregateDetectionConfig:
+    enabled: bool = True
+    default_modules: tuple[str, ...] = ("tilt", "screen", "quality_abnormal", "occlusion")
+    tilt_threshold: float = 1.5
+    screen_conf: float = 0.25
+    screen_iou: float = 0.45
+    occlusion_threshold: float = 0.25
+    occlusion_area_ratio: float = 0.2
+    device: str = "cpu"
+
+
+@dataclass(frozen=True)
 class Settings:
     app: AppConfig
     server: ServerConfig
@@ -115,6 +127,7 @@ class Settings:
     screen_detection: ScreenDetectionConfig
     quality_abnormal_detection: QualityAbnormalDetectionConfig
     occlusion_detection: OcclusionDetectionConfig
+    aggregate_detection: AggregateDetectionConfig
     logging: LoggingConfig
     runtime: RuntimeConfig
 
@@ -128,6 +141,13 @@ def _normalize_kernel_size(value: int) -> int:
     if value < 3:
         return 3
     return value if value % 2 == 1 else value + 1
+
+
+def _normalize_aggregate_data(data: Dict[str, Any]) -> Dict[str, Any]:
+    result = dict(data)
+    if "default_modules" in result:
+        result["default_modules"] = tuple(str(x) for x in result["default_modules"])
+    return result
 
 
 @lru_cache(maxsize=1)
@@ -156,6 +176,9 @@ def get_settings() -> Settings:
         ),
         occlusion_detection=OcclusionDetectionConfig(
             **_section(raw, "occlusion_detection")
+        ),
+        aggregate_detection=AggregateDetectionConfig(
+            **_normalize_aggregate_data(_section(raw, "aggregate_detection"))
         ),
         logging=LoggingConfig(**_section(raw, "logging")),
         runtime=RuntimeConfig(**_section(raw, "runtime")),
