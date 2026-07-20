@@ -8,7 +8,8 @@ from pathlib import Path
 
 import numpy as np
 
-from app.core.config import BASE_DIR, GpuConfig, ScreenDetectionConfig, get_settings
+from app.core.config import BASE_DIR, ScreenDetectionConfig, get_settings
+from app.core.model_protection import materialize_model_path
 from app.services.tilt_detector import decode_base64_image
 from app.services.yolo_compat import patch_legacy_aattn
 
@@ -16,6 +17,29 @@ from app.services.yolo_compat import patch_legacy_aattn
 logger = logging.getLogger(__name__)
 
 ALLOWED_LABELS = frozenset({0, 1, 2, 3})
+
+
+def resolve_yolo_device(device: str) -> str:
+    value = str(device).strip().lower()
+    if value == "cpu":
+        return value
+
+    import torch
+
+    if value == "mps":
+        if not hasattr(torch.backends, "mps") or not torch.backends.mps.is_available():
+            raise RuntimeError("YOLO device mps is configured but MPS is not available")
+        return value
+    if not value.startswith("cuda:") or not value.split(":", 1)[1].isdigit():
+        raise ValueError('yolo.device must be "cpu", "mps", or "cuda:<index>"')
+    index = int(value.split(":", 1)[1])
+    if not torch.cuda.is_available():
+        raise RuntimeError(f"YOLO device {value} is configured but CUDA is not available")
+    if index >= torch.cuda.device_count():
+        raise RuntimeError(
+            f"YOLO device {value} is out of range; visible CUDA devices={torch.cuda.device_count()}"
+        )
+    return value
 
 
 @dataclass(frozen=True)
@@ -43,52 +67,16 @@ class ScreenModelHolder:
         self._warmed_up = False
         self._gpu_memory_mb: float | None = None
 
-    def resolve_device(self, gpu: GpuConfig) -> str | int:
-        if not gpu.enabled:
-            return "cpu"
-
-        import torch
-
-        if not torch.cuda.is_available():
-            if gpu.require_gpu:
-                raise RuntimeError("GPU is enabled but CUDA is not available in this container/process")
-            return "cpu"
-
-        visible = torch.cuda.device_count()
-        if visible <= 0:
-            if gpu.require_gpu:
-                raise RuntimeError("GPU is enabled but no CUDA device is visible")
-            return "cpu"
-
-        try:
-            requested = int(gpu.device_id)
-        except ValueError:
-            return gpu.device_id
-
-        # docker run --gpus device=N 时容器内仅 1 张卡，逻辑编号恒为 cuda:0
-        if visible == 1:
-            if requested != 0:
-                logger.warning(
-                    "config device_id=%s but container exposes 1 GPU; using cuda:0",
-                    gpu.device_id,
-                )
-            return 0
-
-        if requested < 0 or requested >= visible:
-            raise RuntimeError(
-                f"GPU device_id={requested} is out of range, visible device count={visible}"
-            )
-        return requested
-
-    def _warmup_on_device(self, model, device: str | int) -> None:
+    def _warmup_on_device(self, model, device: str) -> None:
         import torch
 
         dummy = np.zeros((640, 640, 3), dtype=np.uint8)
         logger.info("Screen YOLO GPU warmup begin device=%s", device)
         model.predict(source=dummy, device=device, verbose=False)
         self._warmed_up = True
-        if isinstance(device, int) and torch.cuda.is_available():
-            self._gpu_memory_mb = round(torch.cuda.memory_allocated(device) / 1024 / 1024, 2)
+        if device.startswith("cuda:") and torch.cuda.is_available():
+            index = int(device.split(":", 1)[1])
+            self._gpu_memory_mb = round(torch.cuda.memory_allocated(index) / 1024 / 1024, 2)
             logger.info(
                 "Screen YOLO GPU warmup done device=%s gpu_memory_mb=%s",
                 device,
@@ -100,10 +88,7 @@ class ScreenModelHolder:
         weights = Path(settings.screen_detection.weights_path)
         if not weights.is_absolute():
             weights = BASE_DIR / weights
-        device = self.resolve_device(settings.gpu)
-
-        if not weights.is_file():
-            raise FileNotFoundError(f"Screen YOLO weights not found: {weights}")
+        device = resolve_yolo_device(settings.yolo.device)
 
         with self._lock:
             if (
@@ -117,10 +102,10 @@ class ScreenModelHolder:
 
             from ultralytics import YOLO
 
-            logger.info("Loading screen YOLO weights=%s device=%s", weights, device)
-            model = YOLO(str(weights))
-            patched = patch_legacy_aattn(model)
-            if device != "cpu":
+            logger.info("Loading screen YOLO weights=%s device=%s", weights.name, device)
+            with materialize_model_path(weights, settings.model_protection) as load_path:
+                model = YOLO(str(load_path))
+                patched = patch_legacy_aattn(model)
                 self._warmup_on_device(model, device)
             self._model = model
             self._device = device
@@ -130,10 +115,7 @@ class ScreenModelHolder:
 
     @property
     def is_ready(self) -> bool:
-        settings = get_settings()
-        if not settings.screen_detection.preload_at_startup:
-            return True
-        return self._model is not None and (self._device == "cpu" or self._warmed_up)
+        return self._model is not None and self._warmed_up
 
     @property
     def model(self):
@@ -152,9 +134,14 @@ class ScreenModelHolder:
         import torch
 
         device_name = None
-        if self._model is not None and isinstance(self._device, int) and torch.cuda.is_available():
+        if (
+            self._model is not None
+            and isinstance(self._device, str)
+            and self._device.startswith("cuda:")
+            and torch.cuda.is_available()
+        ):
             try:
-                device_name = torch.cuda.get_device_name(self._device)
+                device_name = torch.cuda.get_device_name(int(self._device.split(":", 1)[1]))
             except Exception:
                 device_name = None
 
@@ -173,15 +160,11 @@ _holder = ScreenModelHolder()
 
 
 def ensure_screen_model_loaded() -> dict:
-    settings = get_settings()
-    if not settings.screen_detection.preload_at_startup:
-        return _holder.status
-
     _holder.load()
     status = _holder.status
     if not status["loaded"]:
         raise RuntimeError("Screen YOLO preload finished but model is not loaded")
-    if status["device"] != "cpu" and not status.get("warmed_up"):
+    if not status.get("warmed_up"):
         raise RuntimeError(f"Screen YOLO preload finished but GPU warmup incomplete: {status}")
     return status
 

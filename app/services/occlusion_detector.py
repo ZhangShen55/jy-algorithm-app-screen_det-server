@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from app.core.config import BASE_DIR, OcclusionDetectionConfig, get_settings
+from app.core.model_protection import materialize_model_path
 from app.services.image_preprocess import clamp01, prepare_image
 from app.services.yolo_compat import patch_legacy_aattn
 
@@ -31,6 +32,7 @@ class YoloOcclusionModelHolder:
         self._model = None
         self._weights_path: Path | None = None
         self._device: str | int | None = None
+        self._warmed_up = False
 
     def _resolve_weights(self, config: OcclusionDetectionConfig) -> Path:
         weights = Path(config.yolo_seg_weights_path)
@@ -38,25 +40,19 @@ class YoloOcclusionModelHolder:
             weights = BASE_DIR / weights
         return weights
 
-    def _resolve_device(self, config: OcclusionDetectionConfig) -> str | int:
-        device = config.yolo_device
-        try:
-            return int(device)
-        except (TypeError, ValueError):
-            return str(device)
-
     def load(self) -> None:
-        config = get_settings().occlusion_detection
+        settings = get_settings()
+        config = settings.occlusion_detection
         weights = self._resolve_weights(config)
-        device = self._resolve_device(config)
-        if not weights.is_file():
-            raise FileNotFoundError(f"YOLO occlusion weights not found: {weights}")
+        from app.services.screen_detector import resolve_yolo_device
 
+        device = resolve_yolo_device(settings.yolo.device)
         with self._lock:
             if (
                 self._model is not None
                 and self._weights_path == weights
                 and self._device == device
+                and self._warmed_up
             ):
                 return
 
@@ -67,18 +63,30 @@ class YoloOcclusionModelHolder:
                     "YOLO occlusion dependency missing: install ultralytics and torch"
                 ) from exc
 
-            logger.info("Loading occlusion YOLO-seg weights=%s device=%s", weights, device)
-            model = YOLO(str(weights))
-            patch_legacy_aattn(model)
+            logger.info("Loading occlusion YOLO-seg weights=%s device=%s", weights.name, device)
+            with materialize_model_path(weights, settings.model_protection) as load_path:
+                model = YOLO(str(load_path))
+                patch_legacy_aattn(model)
+                dummy = np.zeros((config.yolo_imgsz, config.yolo_imgsz, 3), dtype=np.uint8)
+                model.predict(
+                    source=dummy,
+                    imgsz=config.yolo_imgsz,
+                    conf=config.threshold,
+                    device=device,
+                    verbose=False,
+                    retina_masks=config.yolo_retina_masks,
+                )
             self._model = model
             self._weights_path = weights
             self._device = device
+            self._warmed_up = True
 
     def reset(self) -> None:
         with self._lock:
             self._model = None
             self._weights_path = None
             self._device = None
+            self._warmed_up = False
 
     @property
     def model(self):
@@ -91,6 +99,19 @@ class YoloOcclusionModelHolder:
         if self._model is None:
             self.load()
         return "cpu" if self._device is None else self._device
+
+    @property
+    def is_ready(self) -> bool:
+        return self._model is not None and self._warmed_up
+
+    @property
+    def status(self) -> dict:
+        return {
+            "loaded": self._model is not None,
+            "warmed_up": self._warmed_up,
+            "weights": self._weights_path.name if self._weights_path else None,
+            "device": self._device,
+        }
 
 
 _yolo_holder = YoloOcclusionModelHolder()
@@ -226,6 +247,18 @@ def _detect_yolo_seg(
 
 def reset_occlusion_yolo_model_cache() -> None:
     _yolo_holder.reset()
+
+
+def ensure_occlusion_model_loaded() -> dict:
+    _yolo_holder.load()
+    status = _yolo_holder.status
+    if not status["loaded"] or not status["warmed_up"]:
+        raise RuntimeError(f"Occlusion YOLO preload incomplete: {status}")
+    return status
+
+
+def is_occlusion_model_ready() -> bool:
+    return _yolo_holder.is_ready
 
 
 def detect_occlusion_from_base64(

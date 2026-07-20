@@ -226,7 +226,7 @@ class AggregateServiceTests(unittest.TestCase):
         from app.services.aggregate_detector import run_detect_all
 
         settings = get_settings()
-        custom = replace(settings, aggregate_detection=replace(settings.aggregate_detection, device="cuda:0"))
+        custom = replace(settings, yolo=replace(settings.yolo, device="cuda:0"))
         patches = self._patch_all_modules()
         with patch("app.services.aggregate_detector.get_settings", return_value=custom), patches[0], patches[1] as screen_mock, patches[2], patches[3] as occ_mock:
             response = run_detect_all(tiny_image_b64(), "1753791280207")
@@ -307,4 +307,6 @@ class AggregateApiRouteTests(unittest.TestCase):
 
         self.assertEqual(200, response.status_code)
         self.assertIn("aggregate_detection", response.json())
+        self.assertIn("yolo", response.json())
+        self.assertNotIn("gpu", response.json())
         self.assertEqual(["tilt", "screen", "quality_abnormal", "occlusion"], response.json()["aggregate_detection"]["default_modules"])

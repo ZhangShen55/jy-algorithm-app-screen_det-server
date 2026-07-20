@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.core.config import get_settings
+from app.core.model_protection import ModelProtectionConfig
 import app.services.occlusion_detector as occlusion_detector
 from app.services.occlusion_detector import detect_occlusion_from_base64, reset_occlusion_yolo_model_cache
 from app.services.quality_abnormal_detector import (
@@ -145,13 +146,14 @@ class FakeYoloHolder:
 def yolo_settings() -> SimpleNamespace:
     return SimpleNamespace(
         runtime=SimpleNamespace(max_image_bytes=10 * 1024 * 1024),
+        yolo=SimpleNamespace(device="cpu"),
+        model_protection=ModelProtectionConfig(enabled=False),
         occlusion_detection=SimpleNamespace(
             enabled=True,
             analyze_max_side=960,
             threshold=0.25,
             area_ratio=0.2,
             yolo_imgsz=960,
-            yolo_device="cpu",
             yolo_retina_masks=True,
             yolo_seg_weights_path="model/occlusion.pt",
         ),

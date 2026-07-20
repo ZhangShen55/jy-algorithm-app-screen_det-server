@@ -131,28 +131,31 @@
   "elapsed_time": "0h 2m 40s",
   "total_requests": 0,
   "memory_mb": 1451.01,
-  "gpu": {
-    "enabled": true,
-    "device_id": "1",
-    "require_gpu": true,
+  "yolo": {
+    "device": "cuda:0",
     "tilt_inference_device": "cpu",
-    "device_id_config": "1",
-    "yolo_device_resolved": 1,
+    "yolo_device_resolved": "cuda:0",
     "cuda_visible_devices": null
   },
   "screen_model": {
     "loaded": true,
     "warmed_up": true,
     "weights": "/app/model/screen.pt",
-    "device": 1,
+    "device": "cuda:0",
     "device_name": "NVIDIA GeForce RTX 4090 D",
     "gpu_memory_mb": 512.0,
     "aattn_patched": 16
+  },
+  "occlusion_model": {
+    "loaded": true,
+    "warmed_up": true,
+    "weights": "occlusion.pt",
+    "device": "cuda:0"
   }
 }
 ```
 
-**HTTP 503：** `preload_at_startup=true` 且 YOLO 未 warmup 完成时。
+**HTTP 503：** 任一YOLO模型尚未完成加载和预热时。
 
 ---
 
@@ -686,8 +689,7 @@
     "conf": 0.25,
     "iou": 0.45,
     "allowed_class_ids": [0, 1, 2, 3],
-    "max_batch_size": 16,
-    "preload_at_startup": true
+    "max_batch_size": 16
   },
   "quality_abnormal_detection": {
     "enabled": true,
@@ -700,7 +702,6 @@
     "area_ratio": 0.2,
     "yolo_seg_weights_path": "model/occlusion.pt",
     "yolo_imgsz": 960,
-    "yolo_device": "cpu",
     "yolo_retina_masks": true
   },
   "aggregate_detection": {
@@ -710,8 +711,7 @@
     "screen_conf": 0.25,
     "screen_iou": 0.45,
     "occlusion_threshold": 0.25,
-    "occlusion_area_ratio": 0.2,
-    "device": "cpu"
+    "occlusion_area_ratio": 0.2
   }
 }
 ```
@@ -725,7 +725,7 @@
 | `[quality_abnormal_detection]` | ✅ |
 | `[occlusion_detection]` | ✅ |
 | `[aggregate_detection]` | ✅ |
-| `[gpu]`、`[server]`（含 workers、port） | ❌ 需重启 |
+| `[yolo]`、`[model_protection]`、`[server]` | ❌ 需重启；热重载返回409 |
 
 ---
 
@@ -766,10 +766,8 @@
 |--------|--------|------|
 | server.port | 8880 | 监听端口 |
 | server.workers | 1 | Uvicorn worker 数，单 GPU 建议 1 |
-| gpu.enabled | true | 是否使用 GPU |
-| gpu.device_id | "1" | YOLO 使用的 GPU 编号 |
-| gpu.require_gpu | true | 启动时校验 CUDA |
-| screen_detection.preload_at_startup | true | 启动时预加载 + warmup |
+| yolo.device | cpu | 两个YOLO模型统一设备；支持cpu、mps、cuda:N |
+| model_protection.enabled | false | 生产加密模型模式开关 |
 | screen_detection.conf | 0.25 | 默认置信度 |
 | screen_detection.iou | 0.45 | 默认 IoU |
 | screen_detection.max_batch_size | 16 | 单次最大图片数 |
@@ -780,14 +778,12 @@
 | occlusion_detection.area_ratio | 0.2 | 遮挡面积判定阈值，请求 `area_ratio` 未传时使用 |
 | occlusion_detection.yolo_seg_weights_path | model/occlusion.pt | YOLO-seg 遮挡模型权重 |
 | occlusion_detection.yolo_imgsz | 960 | YOLO-seg 推理尺寸 |
-| occlusion_detection.yolo_device | cpu | YOLO-seg 推理设备 |
 | aggregate_detection.default_modules | tilt/screen/quality_abnormal/occlusion | `/detect_all` 默认执行模块 |
 | aggregate_detection.tilt_threshold | 1.5 | `/detect_all` 默认倾斜阈值 |
 | aggregate_detection.screen_conf | 0.25 | `/detect_all` 默认屏幕置信度 |
 | aggregate_detection.screen_iou | 0.45 | `/detect_all` 默认屏幕 NMS IoU |
 | aggregate_detection.occlusion_threshold | 0.25 | `/detect_all` 默认遮挡置信度 |
 | aggregate_detection.occlusion_area_ratio | 0.2 | `/detect_all` 默认遮挡面积判定阈值 |
-| aggregate_detection.device | cpu | `/detect_all` 中 YOLO 推理设备 |
 | runtime.max_image_bytes | 10485760 | 单图最大 10MB |
 
 ### YOLO-seg 遮挡后端数据建议
@@ -800,12 +796,12 @@
 - 第一版可用：300–500 张遮挡正样本 + 500–1000 张正常负样本。
 - 生产稳定：1000+ 张遮挡正样本 + 2000+ 张正常负样本。
 
-### Docker device_id 说明
+### Docker CUDA设备说明
 
-| docker run | config device_id | 容器内实际设备 |
+| docker run | config yolo.device | 容器内实际设备 |
 |------------|------------------|----------------|
-| `--gpus all` | `"0"` / `"1"` / `"2"` | 对应 cuda 编号 |
-| `--gpus '"device=1"'` | `"1"` | 自动映射为 **cuda:0** |
+| `--gpus all` | `"cuda:0"` / `"cuda:1"` | 对应容器可见CUDA编号 |
+| `--gpus '"device=1"'` | `"cuda:0"` | 容器只看到选中的物理卡 |
 
 ---
 

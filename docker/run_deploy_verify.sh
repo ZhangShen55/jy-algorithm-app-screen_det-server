@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 本地部署验收：拉起 8880 → 跑 test/ 用例 → 关闭服务
-# 用法: conda activate screen_det && bash scripts/run_deploy_verify.sh
+# 用法: conda activate screen_det && bash docker/run_deploy_verify.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -76,12 +76,9 @@ log "Report: $REPORT_DIR"
 log "Python: $($PYTHON --version 2>&1)"
 
 # --- 静态检查 ---
-for f in config.toml requirements.txt Dockerfile start.sh model/screen.pt app/main.py; do
+for f in config.toml requirements.txt docker/Dockerfile docker/start.sh model/screen.pt model/occlusion.pt app/main.py; do
   [[ -e "$ROOT/$f" ]] && record PASS "static:$f" "exists" || record FAIL "static:$f" "missing"
 done
-
-[[ -f "$ROOT/start.sh" ]] && record PASS "static:start.sh" "exists" \
-  || record FAIL "static:start.sh" "missing"
 
 # --- 启动 ---
 if start_server; then
@@ -99,14 +96,14 @@ curl -fsS "$BASE_URL/config" | tee "$REPORT_DIR/02_config.json" >/dev/null \
 # --- HTTP 批量测试 ---
 while IFS=$'\t' read -r status name detail; do
   record "$status" "$name" "$detail"
-done < <("$PYTHON" "$ROOT/scripts/deploy_verify_http.py" "$BASE_URL" "$REPORT_DIR" --summary-only)
+done < <("$PYTHON" "$ROOT/docker/deploy_verify_http.py" "$BASE_URL" "$REPORT_DIR" --summary-only)
 
 curl -fsS -X POST "$BASE_URL/config/reload" | tee "$REPORT_DIR/03_reload.json" >/dev/null \
   && record PASS "api:config_reload" || record FAIL "api:config_reload"
 
 if command -v docker >/dev/null 2>&1; then
   log "Docker build (online mode, may take several minutes)..."
-  if docker build -t tilt-api-verify:local --build-arg PIP_INSTALL_MODE=online "$ROOT" \
+  if docker build -f "$ROOT/docker/Dockerfile" -t tilt-api-verify:local "$ROOT" \
     >"$REPORT_DIR/docker_build.log" 2>&1; then
     record PASS "docker:build" "tilt-api-verify:local"
   else

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
-from app.core.config import get_settings, reload_settings
-from app.services.occlusion_detector import reset_occlusion_yolo_model_cache
+from app.core.config import StartupConfigChangedError, get_settings, reload_settings
 
 
 router = APIRouter(tags=["config"])
@@ -39,7 +38,8 @@ async def get_runtime_config() -> dict:
     return {
         "app": settings.app.__dict__,
         "server": settings.server.__dict__,
-        "gpu": settings.gpu.__dict__,
+        "yolo": settings.yolo.__dict__,
+        "model_protection": settings.model_protection.__dict__,
         "detection": settings.detection.__dict__,
         "screen_detection": _screen_detection_dict(),
         "quality_abnormal_detection": _quality_abnormal_detection_dict(),
@@ -51,8 +51,13 @@ async def get_runtime_config() -> dict:
 
 @router.post("/config/reload")
 async def reload_runtime_config() -> dict:
-    settings = reload_settings()
-    reset_occlusion_yolo_model_cache()
+    try:
+        settings = reload_settings()
+    except StartupConfigChangedError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": 409, "msg": str(exc)},
+        ) from exc
     return {
         "code": 200,
         "msg": "Config reloaded",
@@ -67,4 +72,5 @@ async def reload_runtime_config() -> dict:
             **settings.aggregate_detection.__dict__,
             "default_modules": list(settings.aggregate_detection.default_modules),
         },
+        "yolo": settings.yolo.__dict__,
     }

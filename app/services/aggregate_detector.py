@@ -33,15 +33,6 @@ from app.services.tilt_detector import detect_image_tilt_from_array
 logger = logging.getLogger(__name__)
 
 
-def _validate_device(device: str) -> str:
-    value = str(device).strip()
-    if value == "cpu":
-        return value
-    if value.startswith("cuda:") and value.split(":", 1)[1].isdigit():
-        return value
-    raise ValueError('aggregate_detection.device must be "cpu" or "cuda:<index>"')
-
-
 def _resolve_modules(include: list[str] | None) -> list[AggregateModule]:
     settings = get_settings()
     configured = list(settings.aggregate_detection.default_modules if include is None else include)
@@ -225,7 +216,7 @@ def run_detect_all(
     settings = get_settings()
     aggregate = settings.aggregate_detection
     modules = _resolve_modules(include)
-    device = _validate_device(aggregate.device)
+    device = settings.yolo.device
     threshold = aggregate.tilt_threshold if tilt_threshold is None else float(tilt_threshold)
     conf = aggregate.screen_conf if screen_conf is None else float(screen_conf)
     iou = aggregate.screen_iou if screen_iou is None else float(screen_iou)

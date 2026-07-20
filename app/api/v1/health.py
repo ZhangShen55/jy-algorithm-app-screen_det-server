@@ -10,6 +10,9 @@ from app.core.config import get_settings
 from app.core.state import app_state
 from app.services.screen_detector import _holder as screen_model_holder
 from app.services.screen_detector import is_screen_model_ready
+from app.services.screen_detector import resolve_yolo_device
+from app.services.occlusion_detector import _yolo_holder as occlusion_model_holder
+from app.services.occlusion_detector import is_occlusion_model_ready
 
 
 router = APIRouter(tags=["health"])
@@ -20,10 +23,11 @@ async def health_check(response: Response) -> dict:
     settings = get_settings()
     elapsed = time.time() - app_state.start_time
     process = psutil.Process()
-    ready = is_screen_model_ready() or not settings.screen_detection.preload_at_startup
+    ready = is_screen_model_ready() and is_occlusion_model_ready()
     screen_model = screen_model_holder.status
+    occlusion_model = occlusion_model_holder.status
 
-    if settings.screen_detection.preload_at_startup and not ready:
+    if not ready:
         response.status_code = 503
 
     return {
@@ -32,16 +36,16 @@ async def health_check(response: Response) -> dict:
         "elapsed_time": format_elapsed(elapsed),
         "total_requests": app_state.request_count,
         "memory_mb": round(process.memory_info().rss / 1024 / 1024, 2),
-        "gpu": {
-            **settings.gpu.__dict__,
+        "yolo": {
+            **settings.yolo.__dict__,
             "tilt_inference_device": "cpu",
-            "device_id_config": settings.gpu.device_id,
             "yolo_device_resolved": (
                 screen_model_holder.device
                 if screen_model["loaded"]
-                else screen_model_holder.resolve_device(settings.gpu)
+                else resolve_yolo_device(settings.yolo.device)
             ),
             "cuda_visible_devices": __import__("os").environ.get("CUDA_VISIBLE_DEVICES"),
         },
         "screen_model": screen_model,
+        "occlusion_model": occlusion_model,
     }

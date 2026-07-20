@@ -5,6 +5,8 @@ __pycache__/
 venv/
 .git/
 test/
+model/
+docker/models-encrypted/*
 runs/
 scripts/
 nginx/

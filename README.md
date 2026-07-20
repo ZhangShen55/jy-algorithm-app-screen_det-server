@@ -13,9 +13,8 @@
 | 服务名 | `tilt-detection-service` |
 | 默认端口 | `8880`（直连 Uvicorn，无 Nginx） |
 | OpenCV 推理 | **CPU**（倾斜、画面异常） |
-| YOLO 推理 | 屏幕检测默认 GPU；镜头遮挡默认 YOLO-seg，设备由 `[occlusion_detection].yolo_device` 配置 |
+| YOLO 推理 | 屏幕与遮挡模型统一由`[yolo].device`配置，启动时全部加载并预热 |
 | 配置 | 根目录 `config.toml`（Docker 建议挂载） |
-| Agent 文档 | [AGENT.md](./AGENT.md) |
 | 接口文档 | [docs/API接口文档.md](./docs/API接口文档.md) |
 
 ---
@@ -47,7 +46,7 @@
 - YOLO **启动预加载 + GPU warmup**，health 返回 `ready` / `warmed_up`
 - 健康检查、运行时配置查询、**热重载** `config.toml`（OpenCV 阈值可热重载，GPU/worker 需重启）
 - 请求访问日志、应用日志（**轮转**）、`X-Request-ID` 追踪
-- Docker：`pytorch/cuda11.8` 基础镜像 + PyArmor 混淆 + `docker run` 部署
+- Docker：`pytorch/cuda11.8` 基础镜像 + Cython 编译 + AES-GCM 模型保护
 
 > 接口返回的 `start_time`、`end_time` 为 **北京时间** 对应的毫秒时间戳字符串。
 
@@ -112,10 +111,11 @@ jy-algorithm-app-screen_det-server/
 │       └── yolo_compat.py
 ├── config.toml
 ├── requirements.txt         # 本地 Conda
-├── requirements-docker.txt  # Docker 构建（不含 torch）
-├── Dockerfile
-├── start.sh
-├── AGENT.md                 # AI Agent / 维护说明
+├── docker/                  # Docker构建、部署验收与模型保护
+│   ├── Dockerfile
+│   ├── requirements-docker.txt
+│   ├── start.sh
+│   └── models-encrypted/    # 本地生产材料，不提交Git
 ├── model/screen.pt          # 屏幕类型 YOLO 权重（打入镜像）
 ├── model/occlusion.pt            # 镜头遮挡 YOLO-seg 权重（部署时提供）
 ├── scripts/                 # 验收与本地调试
@@ -161,14 +161,12 @@ pip install -r requirements.txt
 
 ### 2. 调整 GPU（可选）
 
-编辑 `config.toml` 中 `[gpu].device_id`；单 GPU 建议 `[server].workers = 1`。
+编辑`config.toml`中的`[yolo].device`；可选`cpu`、`mps`或`cuda:N`，单GPU建议`[server].workers = 1`。
 
 ### 3. 启动服务
 
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port 8880 --workers 1
-# 或使用 start.sh（与 Docker 相同逻辑）
-bash start.sh
 ```
 
 ### 4. 健康检查
@@ -192,7 +190,7 @@ curl http://127.0.0.1:8880/health
 验收脚本（自动拉起服务、跑用例、关闭）：
 
 ```bash
-bash scripts/run_deploy_verify.sh
+bash docker/run_deploy_verify.sh
 ```
 
 服务层单项验收：
@@ -220,20 +218,23 @@ python scripts/evaluate_yolo_occlusion.py --images /path/to/images --output-dir 
   "elapsed_time": "0h 5m 12s",
   "total_requests": 42,
   "memory_mb": 1451.0,
-  "gpu": {
-    "enabled": true,
-    "device_id": "1",
-    "device_id_config": "1",
-    "yolo_device_resolved": 1,
-    "require_gpu": true,
+  "yolo": {
+    "device": "cuda:0",
+    "yolo_device_resolved": "cuda:0",
     "tilt_inference_device": "cpu"
   },
   "screen_model": {
     "loaded": true,
     "warmed_up": true,
-    "weights": "/app/model/screen.pt",
-    "device": 1,
+    "weights": "screen.pt",
+    "device": "cuda:0",
     "gpu_memory_mb": 512.0
+  },
+  "occlusion_model": {
+    "loaded": true,
+    "warmed_up": true,
+    "weights": "occlusion.pt",
+    "device": "cuda:0"
   }
 }
 ```
@@ -270,7 +271,7 @@ python scripts/evaluate_yolo_occlusion.py --images /path/to/images --output-dir 
 
 ### 屏幕类型检测 `POST /detect_screen`（YOLO）
 
-使用 `model/screen.pt`，仅返回 **label 0–3**（蓝/黑/白/正常屏）。推理设备由 `config.toml` 的 `[gpu].device_id` 指定。
+使用`model/screen.pt`，仅返回**label 0–3**（蓝/黑/白/正常屏）。推理设备由`config.toml`的`[yolo].device`统一指定。
 
 **请求**（`Content-Type: application/json`）
 
@@ -467,16 +468,20 @@ port = 8880
 workers = 1
 ```
 
-### GPU 与 YOLO 设备
+### YOLO设备与模型保护
 
 ```toml
-[gpu]
-enabled = true
-device_id = "1"           # YOLO GPU；--gpus device=N 时容器内可能映射为 cuda:0
-require_gpu = true        # 启动预加载时校验 CUDA
+[yolo]
+device = "cpu"
+
+[model_protection]
+enabled = false
+encrypted_model_root = "/run/screen-det/models-encrypted"
+key_file = "/run/screen-det/models-encrypted/model.key"
+decrypted_temp_root = "/dev/shm/screen-det-models"
+cleanup_after_load = true
 
 [screen_detection]
-preload_at_startup = true # 随服务启动加载 + GPU warmup
 weights_path = "model/screen.pt"
 conf = 0.25
 iou = 0.45
@@ -487,8 +492,8 @@ max_batch_size = 16
 | 模块 | 设备 |
 |------|------|
 | 倾斜检测 `/detect_tilt` | **CPU**（OpenCV） |
-| 屏幕检测 `/detect_screen` | **`[gpu].device_id` 指定 GPU**；`enabled=false` 时用 CPU |
-| 镜头遮挡 `/detect_occlusion` | 独立读取 `[occlusion_detection].yolo_device`；本机默认 `cpu`，生产可配置 CUDA 设备 |
+| 屏幕检测 `/detect_screen` | `[yolo].device` |
+| 镜头遮挡 `/detect_occlusion` | `[yolo].device` |
 
 ### 检测参数
 
@@ -529,7 +534,6 @@ threshold = 0.25
 area_ratio = 0.2
 yolo_seg_weights_path = "model/occlusion.pt"
 yolo_imgsz = 960
-yolo_device = "cpu"
 yolo_retina_masks = true
 
 [aggregate_detection]
@@ -540,12 +544,11 @@ screen_conf = 0.25
 screen_iou = 0.45
 occlusion_threshold = 0.25
 occlusion_area_ratio = 0.2
-device = "cpu"
 ```
 
 遮挡检测只使用 YOLO-seg；`threshold` 是 YOLO 置信度阈值，`area_ratio` 是最终面积判定阈值。数据集建议：单类 `occlusion` 分割标注；可行性实验约 80–150 张遮挡正样本 + 200–500 张正常负样本，第一版可用建议 300–500 张遮挡正样本 + 500–1000 张正常负样本，生产稳定建议 1000+ 正样本 + 2000+ 正常负样本。
 
-聚合接口 `/detect_all` 使用 `[aggregate_detection]` 作为默认参数来源；分接口仍使用各自原配置段。`device` 只从配置读取，不接受请求覆盖。
+聚合接口`/detect_all`使用`[aggregate_detection]`作为阈值来源；所有YOLO推理统一使用`[yolo].device`，不接受请求覆盖。
 
 ### 日志与运行时
 
@@ -567,12 +570,14 @@ max_image_bytes = 10485760   # 10MB
 ### 构建
 
 ```bash
-docker build -t jy-algorithm-app-screen_det-server:v1.0_260525 .
+docker build -f docker/Dockerfile \
+  -t jy-algorithm-app-screen_det-server:v1.0_260525 .
 ```
 
 - 基础镜像：`pytorch/pytorch:2.6.0-cuda11.8-cudnn9-runtime`（含 torch+cu118）
-- 依赖：`requirements-docker.txt`（不含 torch，避免覆盖基础镜像）
-- 业务代码：构建阶段 PyArmor 混淆
+- 依赖：`docker/requirements-docker.txt`（不含 torch，避免覆盖基础镜像）
+- 业务代码：构建阶段编译为Cython扩展，运行层不保留核心Python源码
+- 模型：生产只读挂载`docker/models-encrypted/`，镜像不包含任何模型文件
 - 模型：`model/screen.pt` 打入镜像；`config.toml` **运行时挂载**
 
 ### 运行
@@ -584,6 +589,7 @@ docker run -d \
   --gpus all \
   -p 8880:8880 \
   -v /path/to/config.toml:/app/config.toml:ro \
+  -v /path/to/models-encrypted:/run/screen-det/models-encrypted:ro \
   -v /path/to/logs:/app/logs \
   jy-algorithm-app-screen_det-server:v1.0_260525
 ```
@@ -599,9 +605,9 @@ nvidia-smi
 | 变更类型 | 操作 |
 |----------|------|
 | 仅 `config.toml` | `docker restart tilt-api` |
-| 代码 / Dockerfile / start.sh | 重新 `docker build` + `docker run` |
+| 代码 / `docker/Dockerfile` / `docker/start.sh` | 重新 `docker build` + `docker run` |
 
-> PyPI 构建失败时，可临时本地 `pip download` 到 `wheels/` 并修改 Dockerfile 的 pip 安装方式（非默认路径）。
+> 完整的加密模型生成、双挂载、启动后清理和重启限制见`docker/README.md`。
 
 ---
 
@@ -686,29 +692,26 @@ JSON 请求 `{"images": "<base64>"}`：`result.angle` / `result.cost_ms` 与上�
 
 ## 常见问题
 
-**Q：`[gpu].require_gpu` 做什么？**  
-A：启动 YOLO 预加载时校验 CUDA 与 `device_id` 合法性；失败则容器/worker 无法进入 ready。
+**Q：配置`device="cuda:0"`但CUDA不可用会怎样？**
+A：两个YOLO模型启动加载直接失败，服务不会静默回退CPU，也不会进入ready。
 
-**Q：Docker 里 `device_id=1` 不生效？**  
-A：若使用 `--gpus '"device=1"'`，容器内仅可见 `cuda:0`，服务会自动映射；多卡 `--gpus all` 时按编号 0/1/2 使用。
-
-**Q：nginx 目录去哪了？**  
+**Q：nginx 目录去哪了？**
 A：当前架构为 Uvicorn 直连 `-p 8880:8880`，不再需要 Nginx 反向代理。
 
-**Q：返回 `有效参考线段不足` 或 `未检测到有效直线`？**  
+**Q：返回 `有效参考线段不足` 或 `未检测到有效直线`？**
 A：画面缺少清晰水平/垂直边缘，可调低 `canny_threshold*`、`min_line_length_ratio` 或 `min_valid_lines`（需结合误检率评估）。
 
-**Q：如何修改倾斜判定阈值？**  
+**Q：如何修改倾斜判定阈值？**
 A：修改 `config.toml` 中 `[detection].tilt_threshold`，然后 `POST /config/reload`。
 
-**Q：Postman 如何测单图？**  
+**Q：Postman 如何测单图？**
 A：`POST http://<host>:8880/detect_tilt`，Body 选 raw，类型 text，直接粘贴 Base64（不要加 JSON 引号）。
 
 ---
 
 ## 依赖版本
 
-见 `requirements.txt` / `requirements-docker.txt`：
+见 `requirements.txt` / `docker/requirements-docker.txt`：
 
 - fastapi、uvicorn、opencv-python-headless、ultralytics
 - Docker 镜像内 torch 由 `pytorch/pytorch:2.6.0-cuda11.8-cudnn9-runtime` 提供

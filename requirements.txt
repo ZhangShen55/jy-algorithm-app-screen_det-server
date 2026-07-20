@@ -9,3 +9,4 @@ psutil==6.0.0
 toml==0.10.2
 ultralytics>=8.3.120
 torch>=2.0.0
+cryptography>=42.0.0,<46

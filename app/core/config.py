@@ -7,6 +7,8 @@ from typing import Any, Dict
 
 import toml
 
+from app.core.model_protection import ModelProtectionConfig
+
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 CONFIG_PATH = BASE_DIR / "config.toml"
@@ -27,10 +29,8 @@ class ServerConfig:
 
 
 @dataclass(frozen=True)
-class GpuConfig:
-    enabled: bool = True
-    device_id: str = "0"
-    require_gpu: bool = True
+class YoloConfig:
+    device: str = "cpu"
 
 
 @dataclass(frozen=True)
@@ -71,7 +71,6 @@ class ScreenDetectionConfig:
     iou: float = 0.45
     allowed_class_ids: tuple[int, ...] = (0, 1, 2, 3)
     max_batch_size: int = 16
-    preload_at_startup: bool = True
 
 
 @dataclass(frozen=True)
@@ -101,7 +100,6 @@ class OcclusionDetectionConfig:
     area_ratio: float = 0.2
     yolo_seg_weights_path: str = "model/occlusion.pt"
     yolo_imgsz: int = 960
-    yolo_device: str = "cpu"
     yolo_retina_masks: bool = True
 
 
@@ -114,14 +112,14 @@ class AggregateDetectionConfig:
     screen_iou: float = 0.45
     occlusion_threshold: float = 0.25
     occlusion_area_ratio: float = 0.2
-    device: str = "cpu"
 
 
 @dataclass(frozen=True)
 class Settings:
     app: AppConfig
     server: ServerConfig
-    gpu: GpuConfig
+    yolo: YoloConfig
+    model_protection: ModelProtectionConfig
     detection: DetectionConfig
     screen_detection: ScreenDetectionConfig
     quality_abnormal_detection: QualityAbnormalDetectionConfig
@@ -149,10 +147,8 @@ def _normalize_aggregate_data(data: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-@lru_cache(maxsize=1)
-def get_settings() -> Settings:
+def _load_settings() -> Settings:
     raw = toml.load(CONFIG_PATH) if CONFIG_PATH.exists() else {}
-    gpu_data = _section(raw, "gpu")
 
     detection_data = _section(raw, "detection")
     if "gaussian_kernel_size" in detection_data:
@@ -167,7 +163,8 @@ def get_settings() -> Settings:
     return Settings(
         app=AppConfig(**_section(raw, "app")),
         server=ServerConfig(**_section(raw, "server")),
-        gpu=GpuConfig(**gpu_data),
+        yolo=YoloConfig(**_section(raw, "yolo")),
+        model_protection=ModelProtectionConfig(**_section(raw, "model_protection")),
         detection=DetectionConfig(**detection_data),
         screen_detection=ScreenDetectionConfig(**screen_data),
         quality_abnormal_detection=QualityAbnormalDetectionConfig(
@@ -184,6 +181,33 @@ def get_settings() -> Settings:
     )
 
 
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    return _load_settings()
+
+
+class StartupConfigChangedError(ValueError):
+    pass
+
+
 def reload_settings() -> Settings:
+    current = get_settings()
+    candidate = _load_settings()
+    startup_changes: list[str] = []
+    if candidate.yolo != current.yolo:
+        startup_changes.append("yolo")
+    if candidate.model_protection != current.model_protection:
+        startup_changes.append("model_protection")
+    if candidate.screen_detection.weights_path != current.screen_detection.weights_path:
+        startup_changes.append("screen_detection.weights_path")
+    if (
+        candidate.occlusion_detection.yolo_seg_weights_path
+        != current.occlusion_detection.yolo_seg_weights_path
+    ):
+        startup_changes.append("occlusion_detection.yolo_seg_weights_path")
+    if startup_changes:
+        raise StartupConfigChangedError(
+            "启动级配置已变化，必须重启服务: " + ", ".join(startup_changes)
+        )
     get_settings.cache_clear()
     return get_settings()

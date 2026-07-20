@@ -1,7 +1,7 @@
 # =============================================================================
 # 屏幕倾斜检测服务 — 统一配置文件
 # 修改 [detection] 后可 POST /config/reload 热重载；
-# 修改 [gpu] / [server] 等需重启进程。
+# 修改 [yolo] / [model_protection] / [server] 等需重启进程。
 # =============================================================================
 
 [app]
@@ -19,20 +19,22 @@ port = 8880
 # Uvicorn worker 数量；单 GPU 建议 1（每 worker 启动时各预加载一份 YOLO）
 workers = 1
 
-[gpu]
-# YOLO 屏幕检测使用的 GPU；enabled=false 时 screen.pt 走 CPU
+[yolo]
+# 两个 YOLO 模型统一推理设备：cpu、mps、cuda:0、cuda:1 等
+# 配置 CUDA 但设备不可用时服务启动失败，不回退 CPU
+device = "cpu"
+
+[model_protection]
+# 开发环境关闭并读取 model/*.pt；生产开启并挂载 models-encrypted
 enabled = false
-# 逻辑 GPU 编号。docker run --gpus all 时直接用 0/1/2；
-# docker run --gpus device=1 时容器内只有 cuda:0，此处填 1 也会自动映射到 cuda:0
-device_id = "1"
-# 为 true 时启动预加载阶段校验 CUDA/GPU 可用，不可用则容器启动失败
-require_gpu = true
+encrypted_model_root = "/run/screen-det/models-encrypted"
+key_file = "/run/screen-det/models-encrypted/model.key"
+decrypted_temp_root = "/dev/shm/screen-det-models"
+cleanup_after_load = true
 
 [screen_detection]
 # YOLO 权重路径（相对项目根目录）
 weights_path = "model/screen.pt"
-# 容器/进程启动时预加载 YOLO；失败则服务不进入 ready 状态
-preload_at_startup = true
 # 默认置信度阈值；请求 body 可覆盖
 conf = 0.25
 # NMS IoU 阈值；请求 body 可覆盖
@@ -117,8 +119,6 @@ glitch_grid_cols = 24
 [occlusion_detection]
 # 镜头近处遮挡检测总开关
 enabled = true
-# YOLO-seg 推理设备：cpu、mps、0、1 等 Ultralytics 支持的设备标识
-yolo_device = "cpu"
 # 分析前最长边缩放到该尺寸
 analyze_max_side = 960
 # YOLO 置信度阈值；请求 threshold 未传时使用该默认值
@@ -135,8 +135,6 @@ yolo_retina_masks = true
 [aggregate_detection]
 # 全量聚合检测总开关
 enabled = true
-# 聚合接口中 YOLO 推理设备；支持 cpu、cuda:0、cuda:1 等
-device = "cpu"
 # 默认执行模块；请求 include 未传时使用
 # tilt:画面倾斜
 # screen:画面中蓝黑白正常幕布检测
