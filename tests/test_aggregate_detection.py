@@ -272,36 +272,11 @@ class AggregateApiRouteTests(unittest.TestCase):
         self.assertEqual(["tilt"], body["executed_modules"])
         self.assertIsNone(body["screen"])
 
-    def test_detect_all_api_v1_route_exists(self) -> None:
+    def test_detect_all_api_v1_route_is_not_registered(self) -> None:
         client = TestClient(app)
-        with patch("app.api.v1.aggregate.run_detect_all") as runner:
-            runner.return_value = SimpleNamespace(
-                code=200,
-                msg="检测完成",
-                start_time="1",
-                end_time="2",
-                cost_ms=1.2,
-                executed_modules=[],
-                failed_modules=[],
-                effective_params=SimpleNamespace(
-                    tilt_threshold=1.5,
-                    screen_conf=0.25,
-                    screen_iou=0.45,
-                    occlusion_threshold=0.25,
-                    occlusion_area_ratio=0.2,
-                    include=[],
-                    device="cpu",
-                ),
-                problem_types=[],
-                tilt=None,
-                screen=None,
-                quality_abnormal=None,
-                occlusion=None,
-            )
-            response = client.post("/api/v1/detect_all", json={"image": tiny_image_b64(), "include": []})
+        response = client.post("/api/v1/detect_all", json={})
 
-        self.assertEqual(200, response.status_code)
-        self.assertEqual([], response.json()["problem_types"])
+        self.assertEqual(404, response.status_code)
 
     def test_detect_all_rejects_invalid_requests(self) -> None:
         client = TestClient(app)

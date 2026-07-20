@@ -24,7 +24,7 @@
 | `POST /detect_quality_abnormal` | OpenCV 规则：虚焦/偏色/雪花噪点/花屏 | CPU |
 | `POST /detect_occlusion` | OpenCV 规则：镜头近处遮挡 + 面积占比 | CPU |
 
-路由双挂载：`/health` 与 `/api/v1/health` 等价（见 `app/main.py`）。
+所有接口均使用无前缀路径，例如 `/health` 和 `/detect_all`。
 
 ---
 
@@ -173,7 +173,7 @@ python scripts/validate_occlusion_samples.py
 
 ```bash
 docker logs tilt-api | grep -E "preload|warmup|failed"
-curl -s http://127.0.0.1:8880/api/v1/health | python3 -m json.tool
+curl -s http://127.0.0.1:8880/health | python3 -m json.tool
 nvidia-smi
 ```
 

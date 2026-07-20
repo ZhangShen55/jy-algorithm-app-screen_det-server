@@ -127,16 +127,16 @@ jy-algorithm-app-screen_det-server/
 └── logs/                    # 运行日志（建议 Docker 挂载）
 ```
 
-路由在 `app/main.py` 中挂载了两次（`prefix=/api/v1` 与无前缀），因此以下路径等价：
+所有接口均使用无前缀路径：
 
 | 用途 | 路径示例 |
 |------|----------|
-| 健康检查 | `/health` 或 `/api/v1/health` |
-| 倾斜检测 | `/detect_tilt` 或 `/api/v1/detect_tilt` |
-| 屏幕检测 | `/detect_screen` 或 `/api/v1/detect_screen` |
-| 画面异常检测 | `/detect_quality_abnormal` 或 `/api/v1/detect_quality_abnormal` |
-| 镜头遮挡检测 | `/detect_occlusion` 或 `/api/v1/detect_occlusion` |
-| 全量聚合检测 | `/detect_all` 或 `/api/v1/detect_all` |
+| 健康检查 | `/health` |
+| 倾斜检测 | `/detect_tilt` |
+| 屏幕检测 | `/detect_screen` |
+| 画面异常检测 | `/detect_quality_abnormal` |
+| 镜头遮挡检测 | `/detect_occlusion` |
+| 全量聚合检测 | `/detect_all` |
 
 ---
 
@@ -176,7 +176,6 @@ bash start.sh
 ```bash
 curl http://127.0.0.1:8880/
 curl http://127.0.0.1:8880/health
-curl http://127.0.0.1:8880/api/v1/health
 ```
 
 ### 5. 使用测试图片
@@ -461,7 +460,6 @@ curl -X POST http://127.0.0.1:8880/config/reload
 name = "tilt-detection-service"
 version = "1.0.0"
 debug = false
-api_prefix = "/api/v1"
 
 [server]
 host = "0.0.0.0"
@@ -594,7 +592,7 @@ docker run -d \
 
 ```bash
 docker logs tilt-api | grep -E "preload|warmup"
-curl -s http://127.0.0.1:8880/api/v1/health
+curl -s http://127.0.0.1:8880/health
 nvidia-smi
 ```
 

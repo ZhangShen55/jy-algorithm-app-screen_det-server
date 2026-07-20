@@ -17,7 +17,6 @@ class AppConfig:
     name: str = "tilt-detection-service"
     version: str = "1.0.0"
     debug: bool = False
-    api_prefix: str = "/api/v1"
 
 
 @dataclass(frozen=True)

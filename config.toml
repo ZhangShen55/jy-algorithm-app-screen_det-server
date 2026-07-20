@@ -11,9 +11,6 @@ name = "tilt-detection-service"
 version = "1.0.0"
 # 是否开启 FastAPI debug（生产建议 false）
 debug = false
-# API 路由前缀，例如 /api/v1/health
-api_prefix = "/api/v1"
-
 [server]
 # 监听地址；Docker 内保持 0.0.0.0
 host = "0.0.0.0"

@@ -6,7 +6,7 @@
 | 版本 | v1.0.0 |
 | 默认端口 | 8880 |
 | 基础地址 | `http://<host>:8880` |
-| 路由前缀 | `/` 与 `/api/v1/` **等价**（以下 URL 均给出两种写法） |
+| 路由形式 | 所有接口均使用无前缀根路径 |
 | 配置来源 | 根目录 `config.toml`（Docker 建议挂载） |
 
 ---
@@ -53,24 +53,24 @@
 
 ## 接口列表
 
-| 序号 | 功能类型 | 方法 | URL（任选其一） | 说明 |
+| 序号 | 功能类型 | 方法 | URL | 说明 |
 |------|---------|------|----------------|------|
-| 1 | 服务信息 | GET | `/` 、`/api/v1/` | 返回服务名、版本、各接口路径 |
-| 2 | 健康检查 | GET | `/health` 、`/api/v1/health` | 运行状态、GPU、YOLO 预加载状态 |
-| 3 | 倾斜检测 | POST | `/detect_tilt` 、`/api/v1/detect_tilt` | OpenCV CPU 线段角度检测 |
-| 4 | 屏幕检测 | POST | `/detect_screen` 、`/api/v1/detect_screen` | YOLO GPU 屏幕类型检测（支持多图） |
-| 5 | **组合检测** | POST | `/detect_inspect` 、`/api/v1/detect_inspect` | 单图：倾斜 + 屏幕（推荐业务入口） |
-| 6 | 画面异常检测 | POST | `/detect_quality_abnormal` 、`/api/v1/detect_quality_abnormal` | OpenCV CPU：虚焦、偏色、雪花噪点、花屏 |
-| 7 | 镜头遮挡检测 | POST | `/detect_occlusion` 、`/api/v1/detect_occlusion` | YOLO-seg：镜头近处遮挡与 mask 面积占比 |
-| 8 | 全量聚合检测 | POST | `/detect_all` 、`/api/v1/detect_all` | 单图：倾斜 + 屏幕 + 画面异常 + 镜头遮挡 |
-| 9 | 配置查询 | GET | `/config` 、`/api/v1/config` | 返回当前配置快照 |
-| 10 | 配置重载 | POST | `/config/reload` 、`/api/v1/config/reload` | 热重载部分配置（见说明） |
+| 1 | 服务信息 | GET | `/` | 返回服务名、版本、各接口路径 |
+| 2 | 健康检查 | GET | `/health` | 运行状态、GPU、YOLO 预加载状态 |
+| 3 | 倾斜检测 | POST | `/detect_tilt` | OpenCV CPU 线段角度检测 |
+| 4 | 屏幕检测 | POST | `/detect_screen` | YOLO GPU 屏幕类型检测（支持多图） |
+| 5 | **组合检测** | POST | `/detect_inspect` | 单图：倾斜 + 屏幕（推荐业务入口） |
+| 6 | 画面异常检测 | POST | `/detect_quality_abnormal` | OpenCV CPU：虚焦、偏色、雪花噪点、花屏 |
+| 7 | 镜头遮挡检测 | POST | `/detect_occlusion` | YOLO-seg：镜头近处遮挡与 mask 面积占比 |
+| 8 | 全量聚合检测 | POST | `/detect_all` | 单图：倾斜 + 屏幕 + 画面异常 + 镜头遮挡 |
+| 9 | 配置查询 | GET | `/config` | 返回当前配置快照 |
+| 10 | 配置重载 | POST | `/config/reload` | 热重载部分配置（见说明） |
 
 ---
 
 ## 1. 服务信息
 
-**URL：** `GET /` 或 `GET /api/v1/`
+**URL：** `GET /`
 
 **请求：** 无
 
@@ -80,13 +80,13 @@
 {
   "service": "tilt-detection-service",
   "version": "1.0.0",
-  "health": "/api/v1/health",
-  "detect_tilt": "/api/v1/detect_tilt",
-  "detect_screen": "/api/v1/detect_screen",
-  "detect_inspect": "/api/v1/detect_inspect",
-  "detect_all": "/api/v1/detect_all",
-  "detect_quality_abnormal": "/api/v1/detect_quality_abnormal",
-  "detect_occlusion": "/api/v1/detect_occlusion"
+  "health": "/health",
+  "detect_tilt": "/detect_tilt",
+  "detect_screen": "/detect_screen",
+  "detect_inspect": "/detect_inspect",
+  "detect_all": "/detect_all",
+  "detect_quality_abnormal": "/detect_quality_abnormal",
+  "detect_occlusion": "/detect_occlusion"
 }
 ```
 
@@ -94,7 +94,7 @@
 
 ## 2. 健康检查
 
-**URL：** `GET /health` 或 `GET /api/v1/health`
+**URL：** `GET /health`
 
 **请求：** 无
 
@@ -158,7 +158,7 @@
 
 ## 3. 倾斜检测
 
-**URL：** `POST /detect_tilt` 或 `POST /api/v1/detect_tilt`
+**URL：** `POST /detect_tilt`
 
 **功能：** 基于 OpenCV 边缘与线段分析，估算画面倾斜角度（CPU）。
 
@@ -229,7 +229,7 @@
 
 ## 4. 屏幕类型检测（YOLO）
 
-**URL：** `POST /detect_screen` 或 `POST /api/v1/detect_screen`
+**URL：** `POST /detect_screen`
 
 **功能：** 使用 `model/screen.pt` 检测屏幕类型（GPU）；仅返回 **label 0–3**。
 
@@ -320,7 +320,7 @@
 
 ## 5. 组合检测（倾斜 + 屏幕）
 
-**URL：** `POST /detect_inspect` 或 `POST /api/v1/detect_inspect`
+**URL：** `POST /detect_inspect`
 
 **功能：** 单张图一次完成倾斜检测（CPU）与幕布/屏幕类型检测（GPU）；Base64 只解码一次。
 
@@ -410,7 +410,7 @@
 
 ## 6. 画面异常检测
 
-**URL：** `POST /detect_quality_abnormal` 或 `POST /api/v1/detect_quality_abnormal`
+**URL：** `POST /detect_quality_abnormal`
 
 **功能：** 使用 OpenCV 规则检测单张图片是否存在画面异常。异常类型支持多选，固定枚举为 `1=虚焦`、`2=偏色`、`3=雪花噪点`、`4=花屏`。
 
@@ -483,7 +483,7 @@
 
 ## 7. 镜头遮挡检测
 
-**URL：** `POST /detect_occlusion` 或 `POST /api/v1/detect_occlusion`
+**URL：** `POST /detect_occlusion`
 
 **功能：** 检测镜头前或镜头不远处遮挡，并返回遮挡区域占整图面积比例。默认使用单类 YOLO-seg 模型 `model/occlusion.pt`，第一版不输出遮挡物枚举。
 
@@ -563,7 +563,7 @@
 
 ## 8. 全量聚合检测
 
-**URL：** `POST /detect_all` 或 `POST /api/v1/detect_all`
+**URL：** `POST /detect_all`
 
 **功能：** 单张图片一次完成倾斜检测、屏幕/幕布类型检测、画面异常检测和镜头遮挡检测。第一版固定串行执行，子模块失败不会阻断其他模块。
 
@@ -660,7 +660,7 @@
 
 ## 9. 配置查询
 
-**URL：** `GET /config` 或 `GET /api/v1/config`
+**URL：** `GET /config`
 
 **请求：** 无
 
@@ -670,7 +670,7 @@
 
 ## 10. 配置重载
 
-**URL：** `POST /config/reload` 或 `POST /api/v1/config/reload`
+**URL：** `POST /config/reload`
 
 **请求：** 无 Body
 
@@ -839,7 +839,7 @@
 
 | 版本说明 | 功能类型 | URL地址 说明 | 请求动作 | 参数说明【请求】 | R/O | 类型 | 类型说明 | 参数说明【应答】 | R/O | 类型 | 类型说明 | 错误码 | 错误码说明 | 样例说明 |
 |---------|---------|-------------|---------|----------------|-----|------|---------|----------------|-----|------|---------|------|---------|---------|
-| v1.0.0 | 倾斜检测 | POST /detect_tilt 或 /api/v1/detect_tilt | POST | Content-Type | R | string | application/json 或 text/plain | code | R | int | 200=成功 | 400 | 参数错误 | 见 §3 |
+| v1.0.0 | 倾斜检测 | POST /detect_tilt | POST | Content-Type | R | string | application/json 或 text/plain | code | R | int | 200=成功 | 400 | 参数错误 | 见 §3 |
 | v1.0.0 | 倾斜检测 | 同上 | POST | images | R | string | Base64（JSON） | msg | R | string | 描述 | 500 | 内部错误 | |
 | v1.0.0 | 倾斜检测 | 同上 | POST | image | O | string | 同 images | start_time | R | string | 开始时间戳 | | | |
 | v1.0.0 | 倾斜检测 | 同上 | POST | tilt_threshold | O | float | 角度阈值(度) | end_time | R | string | 结束时间戳 | | | |
@@ -854,7 +854,7 @@
 
 | 版本说明 | 功能类型 | URL地址 说明 | 请求动作 | 参数说明【请求】 | R/O | 类型 | 类型说明 | 参数说明【应答】 | R/O | 类型 | 类型说明 | 错误码 | 错误码说明 | 样例说明 |
 |---------|---------|-------------|---------|----------------|-----|------|---------|----------------|-----|------|---------|------|---------|---------|
-| v1.0.0 | 屏幕检测 | POST /detect_screen 或 /api/v1/detect_screen | POST | Content-Type | R | string | application/json | code | R | int | 200 | 400 | 参数错误 | 见 §4 |
+| v1.0.0 | 屏幕检测 | POST /detect_screen | POST | Content-Type | R | string | application/json | code | R | int | 200 | 400 | 参数错误 | 见 §4 |
 | v1.0.0 | 屏幕检测 | 同上 | POST | images | R | string/array | Base64 单图或数组 | msg | R | string | 结果描述 | 500 | 内部错误 | |
 | v1.0.0 | 屏幕检测 | 同上 | POST | conf | O | float | 置信度 | conf | R | float | 实际 conf | | | |
 | v1.0.0 | 屏幕检测 | 同上 | POST | iou | O | float | NMS IoU | iou | R | float | 实际 iou | | | |
@@ -870,7 +870,7 @@
 
 | 版本说明 | 功能类型 | URL地址 说明 | 请求动作 | 参数说明【请求】 | R/O | 类型 | 类型说明 | 参数说明【应答】 | R/O | 类型 | 类型说明 | 错误码 | 错误码说明 | 样例说明 |
 |---------|---------|-------------|---------|----------------|-----|------|---------|----------------|-----|------|---------|------|---------|---------|
-| v1.0.0 | 画面异常检测 | POST /detect_quality_abnormal 或 /api/v1/detect_quality_abnormal | POST | Content-Type | R | string | application/json | code | R | int | 200 | 400 | 参数/Base64/图片错误 | 见 §6 |
+| v1.0.0 | 画面异常检测 | POST /detect_quality_abnormal | POST | Content-Type | R | string | application/json | code | R | int | 200 | 400 | 参数/Base64/图片错误 | 见 §6 |
 | v1.0.0 | 画面异常检测 | 同上 | POST | image | R | string | 单张图片 Base64 | msg | R | string | 结果描述 | 500 | 内部错误 | |
 | v1.0.0 | 画面异常检测 | 同上 | POST | | | | | is_abnormal | R | boolean | 是否存在异常 | | | |
 | v1.0.0 | 画面异常检测 | 同上 | POST | | | | | abnormal_types | R | int[] | 命中枚举：1虚焦 2偏色 3雪花噪点 4花屏 | | | |
@@ -885,7 +885,7 @@
 
 | 版本说明 | 功能类型 | URL地址 说明 | 请求动作 | 参数说明【请求】 | R/O | 类型 | 类型说明 | 参数说明【应答】 | R/O | 类型 | 类型说明 | 错误码 | 错误码说明 | 样例说明 |
 |---------|---------|-------------|---------|----------------|-----|------|---------|----------------|-----|------|---------|------|---------|---------|
-| v1.0.0 | 镜头遮挡检测 | POST /detect_occlusion 或 /api/v1/detect_occlusion | POST | Content-Type | R | string | application/json | code | R | int | 200 | 400 | 参数/Base64/图片错误 | 见 §7 |
+| v1.0.0 | 镜头遮挡检测 | POST /detect_occlusion | POST | Content-Type | R | string | application/json | code | R | int | 200 | 400 | 参数/Base64/图片错误 | 见 §7 |
 | v1.0.0 | 镜头遮挡检测 | 同上 | POST | image | R | string | 单张图片 Base64 | msg | R | string | 结果描述 | 500 | 内部错误 | |
 | v1.0.0 | 镜头遮挡检测 | 同上 | POST | threshold | O | float | YOLO 置信度阈值 0~1；不传读配置 | threshold | R | float | 本次实际使用置信度阈值 | | | |
 | v1.0.0 | 镜头遮挡检测 | 同上 | POST | area_ratio | O | float | 遮挡面积判定阈值 0~1；不传读配置 | area_ratio | R | float | 本次实际使用面积判定阈值 | | | |
@@ -900,11 +900,11 @@
 
 | 版本说明 | 功能类型 | URL地址 说明 | 请求动作 | 参数说明【请求】 | R/O | 类型 | 类型说明 | 参数说明【应答】 | R/O | 类型 | 类型说明 | 错误码 | 错误码说明 | 样例说明 |
 |---------|---------|-------------|---------|----------------|-----|------|---------|----------------|-----|------|---------|------|---------|---------|
-| v1.0.0 | 健康检查 | GET /health 或 /api/v1/health | GET | 无 | - | - | - | status | R | string | success/not_ready | 503 | 未就绪 | 见 §2 |
+| v1.0.0 | 健康检查 | GET /health | GET | 无 | - | - | - | status | R | string | success/not_ready | 503 | 未就绪 | 见 §2 |
 | v1.0.0 | 健康检查 | 同上 | GET | | | | | ready | R | boolean | 可接流量 | | | |
 | v1.0.0 | 健康检查 | 同上 | GET | | | | | screen_model.loaded | R | boolean | 模型已加载 | | | |
 | v1.0.0 | 健康检查 | 同上 | GET | | | | | screen_model.warmed_up | R | boolean | GPU已warmup | | | |
 
 ---
 
-*文档版本：v1.1.0 | 更新日期：2026-07-14 | 对应仓库：jy-algorithm-app-screen_det-server*
+*文档版本：v1.1.0 | 更新日期：2026-07-20 | 对应仓库：jy-algorithm-app-screen_det-server*

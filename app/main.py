@@ -99,7 +99,6 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(status_code=exc.status_code, content=content)
 
 
-app.include_router(v1_router, prefix=settings.app.api_prefix)
 app.include_router(v1_router)
 
 
@@ -108,11 +107,11 @@ async def root() -> dict:
     return {
         "service": settings.app.name,
         "version": settings.app.version,
-        "health": f"{settings.app.api_prefix}/health",
-        "detect_tilt": f"{settings.app.api_prefix}/detect_tilt",
-        "detect_screen": f"{settings.app.api_prefix}/detect_screen",
-        "detect_inspect": f"{settings.app.api_prefix}/detect_inspect",
-        "detect_all": f"{settings.app.api_prefix}/detect_all",
-        "detect_quality_abnormal": f"{settings.app.api_prefix}/detect_quality_abnormal",
-        "detect_occlusion": f"{settings.app.api_prefix}/detect_occlusion",
+        "health": "/health",
+        "detect_tilt": "/detect_tilt",
+        "detect_screen": "/detect_screen",
+        "detect_inspect": "/detect_inspect",
+        "detect_all": "/detect_all",
+        "detect_quality_abnormal": "/detect_quality_abnormal",
+        "detect_occlusion": "/detect_occlusion",
     }

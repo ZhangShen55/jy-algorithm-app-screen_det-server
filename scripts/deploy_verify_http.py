@@ -97,7 +97,7 @@ def check_quality_abnormal_routes(base_url: str, root: Path, report: Path) -> tu
     rows = []
     ok = fail = 0
     b64 = base64.b64encode(sample.read_bytes()).decode()
-    for path in ("/detect_quality_abnormal", "/api/v1/detect_quality_abnormal"):
+    for path in ("/detect_quality_abnormal",):
         try:
             status, data = post_json(base_url, path, {"image": b64})
             good = (
@@ -129,7 +129,7 @@ def check_occlusion_routes(base_url: str, root: Path, report: Path) -> tuple[int
     rows = []
     ok = fail = 0
     b64 = base64.b64encode(sample.read_bytes()).decode()
-    for path in ("/detect_occlusion", "/api/v1/detect_occlusion"):
+    for path in ("/detect_occlusion",):
         try:
             status, data = post_json(base_url, path, {"image": b64})
             good = (
@@ -167,7 +167,7 @@ def check_detect_all_routes(base_url: str, root: Path, report: Path) -> tuple[in
         "image": b64,
         "include": ["tilt", "screen", "quality_abnormal", "occlusion"],
     }
-    for path in ("/detect_all", "/api/v1/detect_all"):
+    for path in ("/detect_all",):
         try:
             status, data = post_json(base_url, path, payload)
             good = (
