@@ -135,7 +135,13 @@ yolo_retina_masks = true
 [aggregate_detection]
 # 全量聚合检测总开关
 enabled = true
+# 聚合接口中 YOLO 推理设备；支持 cpu、cuda:0、cuda:1 等
+device = "cpu"
 # 默认执行模块；请求 include 未传时使用
+# tilt:画面倾斜
+# screen:画面中蓝黑白正常幕布检测
+# quality_abnormal:图像质量检测虚焦、偏色、雪花噪点、花屏
+# occlusion:遮挡检测
 default_modules = ["tilt", "screen", "quality_abnormal", "occlusion"]
 # 倾斜角度阈值，单位度
 tilt_threshold = 1.5
@@ -147,5 +153,3 @@ screen_iou = 0.45
 occlusion_threshold = 0.25
 # 遮挡面积占比判定阈值
 occlusion_area_ratio = 0.2
-# 聚合接口中 YOLO 推理设备；支持 cpu、cuda:0、cuda:1 等
-device = "cpu"
