@@ -116,7 +116,6 @@
 |------|------|------|
 | loaded | boolean | 权重是否已加载 |
 | warmed_up | boolean | 是否已完成 GPU warmup |
-| weights | string | 权重路径 |
 | device | int/string | 实际推理设备 |
 | device_name | string | GPU 名称（可选） |
 | gpu_memory_mb | float | GPU 显存占用（MB，可选） |
@@ -140,7 +139,6 @@
   "screen_model": {
     "loaded": true,
     "warmed_up": true,
-    "weights": "/app/model/screen.pt",
     "device": "cuda:0",
     "device_name": "NVIDIA GeForce RTX 4090 D",
     "gpu_memory_mb": 512.0,
@@ -149,7 +147,6 @@
   "occlusion_model": {
     "loaded": true,
     "warmed_up": true,
-    "weights": "occlusion.pt",
     "device": "cuda:0"
   }
 }

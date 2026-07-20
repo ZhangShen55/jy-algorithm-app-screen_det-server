@@ -24,8 +24,16 @@ async def health_check(response: Response) -> dict:
     elapsed = time.time() - app_state.start_time
     process = psutil.Process()
     ready = is_screen_model_ready() and is_occlusion_model_ready()
-    screen_model = screen_model_holder.status
-    occlusion_model = occlusion_model_holder.status
+    screen_model = {
+        key: value
+        for key, value in screen_model_holder.status.items()
+        if key != "weights"
+    }
+    occlusion_model = {
+        key: value
+        for key, value in occlusion_model_holder.status.items()
+        if key != "weights"
+    }
 
     if not ready:
         response.status_code = 503

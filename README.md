@@ -226,14 +226,12 @@ python scripts/evaluate_yolo_occlusion.py --images /path/to/images --output-dir 
   "screen_model": {
     "loaded": true,
     "warmed_up": true,
-    "weights": "screen.pt",
     "device": "cuda:0",
     "gpu_memory_mb": 512.0
   },
   "occlusion_model": {
     "loaded": true,
     "warmed_up": true,
-    "weights": "occlusion.pt",
     "device": "cuda:0"
   }
 }

@@ -65,3 +65,35 @@ class ModelStartupTests(unittest.TestCase):
 
         self.assertEqual(503, response.status_code)
         self.assertFalse(response.json()["ready"])
+
+    def test_health_hides_model_weights(self) -> None:
+        with patch("app.api.v1.health.is_screen_model_ready", return_value=True), patch(
+            "app.api.v1.health.is_occlusion_model_ready", return_value=True
+        ), patch(
+            "app.api.v1.health.screen_model_holder",
+            SimpleNamespace(
+                status={
+                    "loaded": True,
+                    "warmed_up": True,
+                    "weights": "/private/model/screen.pt",
+                    "device": "cpu",
+                },
+                device="cpu",
+            ),
+        ), patch(
+            "app.api.v1.health.occlusion_model_holder",
+            SimpleNamespace(
+                status={
+                    "loaded": True,
+                    "warmed_up": True,
+                    "weights": "occlusion.pt",
+                    "device": "cpu",
+                },
+            ),
+        ):
+            response = TestClient(app).get("/health")
+
+        self.assertEqual(200, response.status_code)
+        body = response.json()
+        self.assertNotIn("weights", body["screen_model"])
+        self.assertNotIn("weights", body["occlusion_model"])
