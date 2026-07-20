@@ -154,7 +154,7 @@ jy-algorithm-app-screen_det-server/
 
 ```bash
 cd /root/workspace/jy-algorithm-app-screen_det-server
-
+conda create -n screen_det python=3.11
 conda activate screen_det
 pip install -r requirements.txt
 ```

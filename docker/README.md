@@ -44,11 +44,11 @@ docker build -f docker/Dockerfile \
 ```bash
 docker run -d \
   --name screen-det \
-  --gpus device=0 \
+  --gpus all \
   -p 8880:8880 \
   -v "$PWD/config.toml:/app/config.toml:ro" \
   -v "$PWD/docker/models-encrypted:/run/screen-det/models-encrypted:ro" \
-  jy-algorithm-app-screen-det-server:protected
+  jy-algorithm-app-screen-det-server:tag
 ```
 
 `/health`只有在`screen.pt`和`occlusion.pt`都加载并预热后才返回ready。ready后可以删除宿主机`docker/models-encrypted/`中的密文和密钥，当前容器继续使用内存模型推理。
